@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "clean": "rm -rf build",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@andrew24601/reckon": "^0.1.0"
+  }
+}
