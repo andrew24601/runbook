@@ -49,7 +49,7 @@ NSString* WorkbookCachePathForSourceLabel(NSString* sourceLabel);
 NSArray<NSString*>* RunDownSecretNames(void);
 NSDictionary<NSString*, NSString*>* RunDownResolveSecrets(NSArray<NSString*>* secretNames);
 void RunDownPresentSecretsPanel(NSWindow* parentWindow);
-void RunDownToggleHiddenJavascriptCells(NSWindow* window);
+void RunDownToggleHiddenRuntimeCells(NSWindow* window);
 NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<WorkbookDocumentSource> content, NSString** errorText);
 NSMenu* BuildApplicationMenu(NSString* appName);
 

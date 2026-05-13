@@ -454,13 +454,13 @@ NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<Wo
     return [window autorelease];
 }
 
-void RunDownToggleHiddenJavascriptCells(NSWindow* window) {
+void RunDownToggleHiddenRuntimeCells(NSWindow* window) {
     WKWebView* webView = FindWorkbookWebView(window != nil ? [window contentView] : nil);
     if (webView == nil) {
         return;
     }
 
-    [webView evaluateJavaScript:@"window.RunDown && window.RunDown.toggleHiddenJavascriptCells && window.RunDown.toggleHiddenJavascriptCells();"
+    [webView evaluateJavaScript:@"window.RunDown && window.RunDown.toggleHiddenRuntimeCells && window.RunDown.toggleHiddenRuntimeCells();"
               completionHandler:nil];
 }
 
@@ -508,11 +508,11 @@ NSMenu* BuildApplicationMenu(NSString* appName) {
     NSMenuItem* viewItem = [[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""];
     [mainMenu addItem:viewItem];
     NSMenu* viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
-    NSMenuItem* hiddenJavascriptItem = [viewMenu addItemWithTitle:@"Show/Hide JavaScript Cells"
-                                                           action:@selector(toggleHiddenJavascriptCells:)
-                                                    keyEquivalent:@"j"];
-    [hiddenJavascriptItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
-    [hiddenJavascriptItem setTarget:[NSApp delegate]];
+    NSMenuItem* hiddenRuntimeItem = [viewMenu addItemWithTitle:@"Show/Hide Auto HTTP and JavaScript Cells"
+                                                        action:@selector(toggleHiddenRuntimeCells:)
+                                                 keyEquivalent:@"j"];
+    [hiddenRuntimeItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [hiddenRuntimeItem setTarget:[NSApp delegate]];
     [viewItem setSubmenu:viewMenu];
 
     NSMenuItem* windowItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""];

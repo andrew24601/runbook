@@ -76,9 +76,9 @@ static NSString* BuiltInWelcomeWorkbook(void) {
         "user = \"1\"\n"
         "```\n"
         "\n"
-        "The profile request uses the shared base URL and user variables.\n"
+        "The profile request uses the shared base URL and user variables, and runs automatically when those inputs change.\n"
         "\n"
-        "```http name=\"profile\"\n"
+        "```http name=\"profile\" auto=\"true\"\n"
         "GET {{my_vars.base_url}}/users/{{my_vars.user}}\n"
         "Accept: application/json\n"
         "```\n"
@@ -102,7 +102,7 @@ static NSString* BuiltInWelcomeWorkbook(void) {
         "};\n"
         "```\n"
         "\n"
-        "Once the request runs, markdown can reflect the cached response.\n"
+        "Markdown can reflect the cached response.\n"
         "\n"
         "- Profile status: {{profile.status}}\n"
         "- Profile name: {{profile.body.name}}\n"
@@ -232,7 +232,7 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
 - (void)openWorkbookPaths:(NSArray<NSString*>*)workbookPaths;
 - (void)persistCurrentWorkbookSession;
 - (void)rebuildRecentDocumentsMenu:(NSMenu*)menu;
-- (IBAction)toggleHiddenJavascriptCells:(id)sender;
+- (IBAction)toggleHiddenRuntimeCells:(id)sender;
 
 @end
 
@@ -378,9 +378,9 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
     [[NSDocumentController sharedDocumentController] clearRecentDocuments:nil];
 }
 
-- (IBAction)toggleHiddenJavascriptCells:(id)sender {
+- (IBAction)toggleHiddenRuntimeCells:(id)sender {
     (void)sender;
-    RunDownToggleHiddenJavascriptCells([NSApp keyWindow]);
+    RunDownToggleHiddenRuntimeCells([NSApp keyWindow]);
 }
 
 - (IBAction)showSecrets:(id)sender {

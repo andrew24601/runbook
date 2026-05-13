@@ -7,9 +7,9 @@ base_url = "https://jsonplaceholder.typicode.com"
 user = "1"
 ```
 
-The profile request uses the shared base URL and user variables.
+The profile request uses the shared base URL and user variables, and runs automatically when those inputs change.
 
-```http name="profile"
+```http name="profile" auto="true"
 GET {{my_vars.base_url}}/users/{{my_vars.user}}
 Accept: application/json
 ```
@@ -33,7 +33,7 @@ return {
 };
 ```
 
-Once the request runs, markdown can reflect the cached response.
+Markdown can reflect the cached response.
 
 - Profile status: {{profile.status}}
 - Profile name: {{profile.body.name}}
