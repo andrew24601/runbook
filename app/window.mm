@@ -7,33 +7,29 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <WebKit/WebKit.h>
 
-@interface DoofBookWebShellMessageBridge : NSObject <WKScriptMessageHandler>
+@interface DoofBookWebShellMessageBridge : NSObject <WKScriptMessageHandler, WKScriptMessageHandlerWithReply>
 @end
 
 @implementation DoofBookWebShellMessageBridge
 
-- (void)userContentController:(WKUserContentController*)userContentController didReceiveScriptMessage:(WKScriptMessage*)message {
-    (void)userContentController;
-    if (![[message name] isEqualToString:@"rundownHost"]) {
-        return;
-    }
-
-    NSDictionary* payload = [[message body] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)[message body] : nil;
+- (id)handleCommandPayload:(id)body errorMessage:(NSString**)errorMessage {
+    NSDictionary* payload = [body isKindOfClass:[NSDictionary class]] ? (NSDictionary*)body : nil;
     NSString* command = [payload[@"command"] isKindOfClass:[NSString class]] ? (NSString*)payload[@"command"] : @"";
     NSDictionary* commandPayload = [payload[@"payload"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)payload[@"payload"] : nil;
+
     if ([command isEqualToString:@"openDocument"]) {
         id delegate = [NSApp delegate];
         if ([delegate respondsToSelector:@selector(openDocument:)]) {
             [delegate performSelector:@selector(openDocument:) withObject:nil];
         }
-        return;
+        return @{ @"ok": @YES };
     }
 
     if ([command isEqualToString:@"persistRuntimeState"]) {
         NSString* cachePath = [commandPayload[@"cachePath"] isKindOfClass:[NSString class]] ? (NSString*)commandPayload[@"cachePath"] : @"";
         NSDictionary* runtimeState = [commandPayload[@"runtimeState"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)commandPayload[@"runtimeState"] : nil;
         if ([cachePath length] == 0 || runtimeState == nil || ![NSJSONSerialization isValidJSONObject:runtimeState]) {
-            return;
+            return @{ @"ok": @NO };
         }
 
         NSString* directoryPath = [cachePath stringByDeletingLastPathComponent];
@@ -44,11 +40,55 @@
         NSError* error = nil;
         NSData* jsonData = [NSJSONSerialization dataWithJSONObject:runtimeState options:NSJSONWritingPrettyPrinted error:&error];
         if (jsonData == nil || error != nil) {
-            return;
+            return @{ @"ok": @NO };
         }
 
-        [jsonData writeToFile:cachePath options:NSDataWritingAtomic error:nil];
+        return @{
+            @"ok": [NSNumber numberWithBool:[jsonData writeToFile:cachePath options:NSDataWritingAtomic error:nil]]
+        };
     }
+
+    if ([command isEqualToString:@"listSecrets"]) {
+        return @{
+            @"secretNames": RunDownSecretNames()
+        };
+    }
+
+    if ([command isEqualToString:@"resolveSecrets"]) {
+        NSArray* secretNames = [commandPayload[@"secretNames"] isKindOfClass:[NSArray class]] ? (NSArray*)commandPayload[@"secretNames"] : @[];
+        return @{
+            @"secrets": RunDownResolveSecrets(secretNames)
+        };
+    }
+
+    if (errorMessage != NULL) {
+        *errorMessage = [NSString stringWithFormat:@"Unknown host command: %@", command];
+    }
+    return nil;
+}
+
+- (void)userContentController:(WKUserContentController*)userContentController didReceiveScriptMessage:(WKScriptMessage*)message {
+    (void)userContentController;
+    if (![[message name] isEqualToString:@"rundownHost"]) {
+        return;
+    }
+
+    NSString* errorMessage = nil;
+    [self handleCommandPayload:[message body] errorMessage:&errorMessage];
+}
+
+- (void)userContentController:(WKUserContentController*)userContentController
+      didReceiveScriptMessage:(WKScriptMessage*)message
+                 replyHandler:(void (^)(id reply, NSString* errorMessage))replyHandler {
+    (void)userContentController;
+    if (![[message name] isEqualToString:@"rundownHost"]) {
+        replyHandler(nil, @"Unknown message bridge");
+        return;
+    }
+
+    NSString* errorMessage = nil;
+    id reply = [self handleCommandPayload:[message body] errorMessage:&errorMessage];
+    replyHandler(reply ?: @{ @"ok": @NO }, errorMessage);
 }
 
 @end
@@ -92,6 +132,7 @@ NSDictionary* EmptyRuntimeStateObject() {
         @"variableNamespaceCount": @0,
         @"httpEntryCount": @0,
         @"variables": @{},
+        @"secretBindings": @{},
         @"http": @{}
     };
 }
@@ -99,12 +140,14 @@ NSDictionary* EmptyRuntimeStateObject() {
 NSDictionary* NormalizeRuntimeStateObject(id value) {
     NSDictionary* object = [value isKindOfClass:[NSDictionary class]] ? (NSDictionary*)value : nil;
     NSDictionary* variablesObject = [object[@"variables"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"variables"] : @{};
+    NSDictionary* secretBindingsObject = [object[@"secretBindings"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"secretBindings"] : @{};
     NSDictionary* httpObject = [object[@"http"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"http"] : @{};
 
     return @{
         @"variableNamespaceCount": [NSNumber numberWithUnsignedInteger:[variablesObject count]],
         @"httpEntryCount": [NSNumber numberWithUnsignedInteger:[httpObject count]],
         @"variables": variablesObject,
+        @"secretBindings": secretBindingsObject,
         @"http": httpObject
     };
 }
@@ -173,13 +216,29 @@ NSString* WebShellBootstrapScript(
 NSString* WebShellHostScript() {
     return @"window.rundownHost = {"
         "available: true,"
-        "send(command, payload) {"
+        "post(command, payload) {"
         "  const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.rundownHost;"
         "  if (!handler || typeof handler.postMessage !== 'function') {"
+        "    return null;"
+        "  }"
+        "  return handler.postMessage({ command, payload: payload || null });"
+        "},"
+        "send(command, payload) {"
+        "  const result = this.post(command, payload);"
+        "  if (!result) {"
         "    return false;"
         "  }"
-        "  handler.postMessage({ command, payload: payload || null });"
+        "  if (typeof result.catch === 'function') {"
+        "    result.catch(() => {});"
+        "  }"
         "  return true;"
+        "},"
+        "request(command, payload) {"
+        "  const result = this.post(command, payload);"
+        "  if (!result) {"
+        "    return Promise.reject(new Error('RunDown host bridge is unavailable'));"
+        "  }"
+        "  return typeof result.then === 'function' ? result : Promise.resolve(result);"
         "},"
         "openDocument() {"
         "  return this.send('openDocument');"
@@ -209,7 +268,11 @@ WKWebView* BuildWorkbookWebView(
     WKUserContentController* contentController = [[[WKUserContentController alloc] init] autorelease];
     DoofBookWebShellMessageBridge* bridge = [[[DoofBookWebShellMessageBridge alloc] init] autorelease];
     [configuration setUserContentController:contentController];
-    [contentController addScriptMessageHandler:bridge name:kWebShellHostBridgeName];
+    if ([contentController respondsToSelector:@selector(addScriptMessageHandlerWithReply:contentWorld:name:)]) {
+        [contentController addScriptMessageHandlerWithReply:bridge contentWorld:[WKContentWorld pageWorld] name:kWebShellHostBridgeName];
+    } else {
+        [contentController addScriptMessageHandler:bridge name:kWebShellHostBridgeName];
+    }
 
     WKUserScript* hostScript = [[[WKUserScript alloc] initWithSource:WebShellHostScript()
                                                        injectionTime:WKUserScriptInjectionTimeAtDocumentStart
@@ -382,6 +445,10 @@ NSMenu* BuildApplicationMenu(NSString* appName) {
     NSMenu* appMenu = [[NSMenu alloc] initWithTitle:appName];
     NSString* aboutTitle = [NSString stringWithFormat:@"About %@", appName];
     [appMenu addItemWithTitle:aboutTitle action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* secretsItem = [appMenu addItemWithTitle:@"Secrets…" action:@selector(showSecrets:) keyEquivalent:@","];
+    [secretsItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [secretsItem setTarget:[NSApp delegate]];
     [appMenu addItem:[NSMenuItem separatorItem]];
     NSString* hideTitle = [NSString stringWithFormat:@"Hide %@", appName];
     [appMenu addItemWithTitle:hideTitle action:@selector(hide:) keyEquivalent:@"h"];

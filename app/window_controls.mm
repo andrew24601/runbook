@@ -362,6 +362,11 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
     [[NSDocumentController sharedDocumentController] clearRecentDocuments:nil];
 }
 
+- (IBAction)showSecrets:(id)sender {
+    (void)sender;
+    RunDownPresentSecretsPanel([NSApp keyWindow]);
+}
+
 - (void)menuNeedsUpdate:(NSMenu*)menu {
     if ([[menu title] isEqualToString:@"Open Recent"]) {
         [self rebuildRecentDocumentsMenu:menu];

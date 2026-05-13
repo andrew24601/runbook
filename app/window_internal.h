@@ -46,6 +46,9 @@ static inline std::string StdStringOrEmpty(NSString* value) {
 
 NSString* ResolvedWorkbookFilePath(NSString* sourceLabel);
 NSString* WorkbookCachePathForSourceLabel(NSString* sourceLabel);
+NSArray<NSString*>* RunDownSecretNames(void);
+NSDictionary<NSString*, NSString*>* RunDownResolveSecrets(NSArray<NSString*>* secretNames);
+void RunDownPresentSecretsPanel(NSWindow* parentWindow);
 NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<WorkbookDocumentSource> content, NSString** errorText);
 NSMenu* BuildApplicationMenu(NSString* appName);
 

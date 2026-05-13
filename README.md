@@ -9,6 +9,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 - Opens Markdown workbooks in a native macOS window.
 - Renders ordinary Markdown alongside runnable workbook cells.
 - Supports shared variable cells with `{{variable.name}}` templating.
+- Supports Keychain-backed secret slots with per-workbook bindings.
 - Executes HTTP cells deliberately, only when the user runs them.
 - Caches HTTP responses and runtime state outside the workbook file.
 - Lets rendered Markdown and JSON cells reflect cached response data.
@@ -51,6 +52,18 @@ Supported workbook fences in the current shell:
 | `assert` | Reserved for assertion cells. |
 
 Runtime output is not written back into the Markdown file.
+
+### Secret Slots
+
+Global secrets are configured from the native app menu with **Secrets…**. Values are stored in macOS Keychain under user-chosen names such as `SECRET_ACCESS_KEY`; the app lists names but never displays stored values.
+
+A variable can opt into a secret binding by using `<secret>` as its value:
+
+```variables name="env"
+api_key = <secret>
+```
+
+The rendered variable cell shows a dropdown of configured secret names. The selected binding is stored in the workbook runtime cache as a non-secret reference, while the actual Keychain value is fetched only when an HTTP request runs. Templates still use normal variable syntax, for example `Authorization: Bearer {{env.api_key}}`; previews and cached request snapshots are redacted.
 
 ## Project Layout
 

@@ -1,7 +1,8 @@
 {
   "scripts": {
     "clean": "rm -rf build",
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "app": "node build.mjs && open -n build/RunDown.app"
   },
   "dependencies": {
     "@andrew24601/reckon": "^0.1.0"

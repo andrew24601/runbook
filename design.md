@@ -44,7 +44,7 @@ Each cell snapshots its input manifold at execution time. The manifold is the co
 The following are explicitly excluded from manifold snapshotting and staleness detection:
 
 - The value of the `Authorization` header (auth is infrastructure, not logic)
-- Any `keychain.*` variable reference, regardless of where it appears
+- Raw values from secret slots, regardless of where they appear
 
 ---
 
@@ -57,7 +57,7 @@ Cells can reference other cells' outputs using `{{ }}` expressions:
 {{ cell_name.status }}
 {{ cell_name.headers.content-type }}
 {{ my_vars.baseUrl }}
-{{ keychain.api_token }}
+{{ env.api_token }}
 ```
 
 The root of every expression is a cell name. Each cell type exports a well-known output envelope, so the available keys are predictable.
@@ -99,7 +99,7 @@ A named bag of key-value pairs. The foundation for shared configuration and envi
 
 **Naming conventions:**
 - Plain name → regular variable, fully visible, included in manifold
-- `keychain.*` prefix → value stored in macOS Keychain, displayed as `*****`, excluded from manifold and cache
+- `<secret>` value → secret slot bound to a global Keychain item at runtime, displayed as `*****`, raw value excluded from manifold and cache
 
 **Output envelope:**
 ```json
@@ -167,7 +167,7 @@ Some introductory prose about what this workbook does.
 ```http name="login"
 POST {{my_vars.base_url}}/auth
 Content-Type: application/json
-Authorization: Bearer {{keychain.token}}
+Authorization: Bearer {{my_vars.api_token}}
 
 {"username": "{{my_vars.user}}"}
 ```
@@ -215,34 +215,48 @@ If a workbook is moved or renamed, the app detects the stale cache path on open 
 
 **Cache stores:**
 - Last output per named cell
-- Manifold snapshot per cell (excluding Authorization header values and keychain references)
+- Manifold snapshot per cell (excluding Authorization header values and raw secret slot values)
+- Secret slot bindings by workbook namespace and variable key
 - Run timestamps
 - Run history (small ring buffer, TBD depth)
 
 **Cache never stores:**
-- Resolved keychain values
+- Resolved secret values
 - Raw Authorization header values
 
 ---
 
 ## Secrets — Keychain Integration
 
-Secrets are managed via the macOS Keychain, surfaced through the Variable cell naming convention.
+Secrets are managed globally by the native wrapper and stored as macOS Keychain generic password items. The Keychain service is `dev.doof.rundown.secrets`; the account is the user-visible secret name, such as `SECRET_ACCESS_KEY`.
 
-Any variable named with the `keychain.*` prefix is stored in and retrieved from the Keychain rather than the workbook or cache:
+Workbook variables opt into secret binding with a sentinel value:
 
 ```
-keychain.api_token      → stored in Keychain as "api_token"
-keychain.db_password    → stored in Keychain as "db_password"
+api_token = <secret>
 ```
+
+The rendered variable cell presents that entry as a dropdown of configured secret names. The dropdown selection is stored per workbook in the runtime cache as a non-secret binding:
+
+```json
+{
+  "secretBindings": {
+    "env": {
+      "api_token": "SECRET_ACCESS_KEY"
+    }
+  }
+}
+```
+
+Templates keep using normal variable syntax, such as `{{env.api_token}}`.
 
 **Behaviour:**
-- Displayed as `*****` in the variable cell when a value is present
-- Prompted for value on first reference if not set
-- Manageable via a secrets panel — lists named keychain items, add/delete, values hidden
-- Excluded from manifold snapshotting universally
-- Excluded from cache persistence
-- Not redacted from HTTP response bodies — if a service echoes a secret back, that is the service's problem
+- Values are added, updated, and deleted through a native Secrets panel; stored values are hidden
+- Bound secret slots render as `*****` in prose, HTTP previews, and cached request snapshots
+- Unbound secret slots disable HTTP execution until a configured secret is selected
+- Actual secret values are requested from native only when an HTTP request runs
+- Raw secret values are excluded from workbook Markdown, runtime cache, and request snapshots
+- Secret values are not redacted from HTTP response bodies if a service echoes them back
 
 ---
 

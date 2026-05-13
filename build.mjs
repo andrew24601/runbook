@@ -2,7 +2,7 @@ import { clangTree, command, executable, macOSApp, pngIcon, reckon } from "@andr
 
 const projectRoot = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const nativeFlags = ["-std=c++17"];
-const frameworkNames = ["Cocoa", "Foundation", "WebKit", "UniformTypeIdentifiers"];
+const frameworkNames = ["Cocoa", "Foundation", "Security", "WebKit", "UniformTypeIdentifiers"];
 
 async function main() {
   const webBundle = command("npm", ["run", "build"], {

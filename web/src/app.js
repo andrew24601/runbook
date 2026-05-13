@@ -13,6 +13,7 @@ const bootstrap = window.__RUNDOWN_BOOTSTRAP__ || {
     variableNamespaceCount: 0,
     httpEntryCount: 0,
     variables: {},
+    secretBindings: {},
     http: {}
   }
 };
@@ -21,12 +22,16 @@ const appState = {
   runtimeState: normalizeRuntimeState(bootstrap.runtimeState),
   parsedDocument: parseWorkbookDocument(bootstrap.document && bootstrap.document.source ? bootstrap.document.source : ""),
   inflightRequests: new Set(),
-  expandedHTTPCells: new Set()
+  expandedHTTPCells: new Set(),
+  secretNames: [],
+  secretNamesLoaded: false,
+  secretNamesError: ""
 };
 
 const app = document.getElementById("app");
 if (app) {
   renderApp();
+  refreshSecretNamesFromHost();
 }
 
 window.addEventListener("pagehide", () => {
@@ -37,13 +42,42 @@ window.addEventListener("beforeunload", () => {
   persistRuntimeStateToHost();
 });
 
+window.addEventListener("focus", () => {
+  refreshSecretNamesFromHost();
+});
+
 function normalizeRuntimeState(state) {
   return {
     variableNamespaceCount: state && typeof state.variableNamespaceCount === "number" ? state.variableNamespaceCount : 0,
     httpEntryCount: state && typeof state.httpEntryCount === "number" ? state.httpEntryCount : 0,
     variables: state && state.variables ? state.variables : {},
+    secretBindings: state && state.secretBindings ? state.secretBindings : {},
     http: state && state.http ? state.http : {}
   };
+}
+
+async function refreshSecretNamesFromHost() {
+  if (!window.rundownHost || typeof window.rundownHost.request !== "function") {
+    appState.secretNames = [];
+    appState.secretNamesLoaded = true;
+    appState.secretNamesError = "";
+    renderApp();
+    return;
+  }
+
+  try {
+    const response = await window.rundownHost.request("listSecrets");
+    appState.secretNames = Array.isArray(response && response.secretNames)
+      ? response.secretNames.filter((name) => typeof name === "string").sort((left, right) => left.localeCompare(right))
+      : [];
+    appState.secretNamesError = "";
+  } catch (error) {
+    appState.secretNames = [];
+    appState.secretNamesError = error instanceof Error ? error.message : String(error);
+  } finally {
+    appState.secretNamesLoaded = true;
+    renderApp();
+  }
 }
 
 function renderApp() {
@@ -199,12 +233,14 @@ function parseVariableEntries(source) {
     .map((line) => {
       const separatorIndex = line.indexOf("=");
       if (separatorIndex === -1) {
-        return { key: line, value: "" };
+        return { key: line, value: "", isSecretSlot: false };
       }
 
+      const value = normalizeVariableValue(line.slice(separatorIndex + 1).trim());
       return {
         key: line.slice(0, separatorIndex).trim(),
-        value: normalizeVariableValue(line.slice(separatorIndex + 1).trim())
+        value,
+        isSecretSlot: isSecretSentinelValue(value)
       };
     });
 }
@@ -215,6 +251,10 @@ function normalizeVariableValue(value) {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+function isSecretSentinelValue(value) {
+  return String(value || "").trim() === "<secret>";
 }
 
 function renderDocumentFlow(nodes, state) {
@@ -359,6 +399,12 @@ function renderVariablesEditor(node, state) {
     key.textContent = entry.key;
     row.appendChild(key);
 
+    if (entry.isSecretSlot) {
+      row.appendChild(renderSecretBindingSelect(node.name, entry, state));
+      editor.appendChild(row);
+      return;
+    }
+
     const input = document.createElement("input");
     input.className = "variable-input";
     input.type = "text";
@@ -380,6 +426,44 @@ function renderVariablesEditor(node, state) {
   });
 
   return editor;
+}
+
+function renderSecretBindingSelect(namespaceName, entry, state) {
+  const select = document.createElement("select");
+  select.className = "variable-input variable-secret-select";
+  select.value = getSecretBinding(state.runtimeState, namespaceName, entry.key);
+  select.disabled = Boolean(state.secretNamesError);
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = state.secretNamesLoaded ? "Select a secret" : "Loading secrets...";
+  select.appendChild(emptyOption);
+
+  const boundSecretName = getSecretBinding(state.runtimeState, namespaceName, entry.key);
+  const optionNames = [...state.secretNames];
+  if (boundSecretName && !optionNames.includes(boundSecretName)) {
+    optionNames.push(boundSecretName);
+  }
+
+  optionNames.forEach((secretName) => {
+    const option = document.createElement("option");
+    option.value = secretName;
+    option.textContent = secretName === boundSecretName || state.secretNames.includes(secretName)
+      ? secretName
+      : `${secretName} (missing)`;
+    select.appendChild(option);
+  });
+
+  select.value = boundSecretName;
+  select.addEventListener("focus", () => {
+    refreshSecretNamesFromHost();
+  });
+  select.addEventListener("change", () => {
+    setSecretBinding(state.runtimeState, namespaceName, entry.key, select.value);
+    persistRuntimeStateToHost();
+    refreshTemplateDrivenNodes();
+  });
+  return select;
 }
 
 function refreshTemplateDrivenNodes() {
@@ -527,6 +611,39 @@ function setVariableValue(runtimeState, namespaceName, key, value, defaultValue)
   }
 }
 
+function getSecretBinding(runtimeState, namespaceName, key) {
+  const namespaceBindings = runtimeState.secretBindings && runtimeState.secretBindings[namespaceName] ? runtimeState.secretBindings[namespaceName] : null;
+  if (namespaceBindings && Object.prototype.hasOwnProperty.call(namespaceBindings, key)) {
+    return namespaceBindings[key];
+  }
+
+  return "";
+}
+
+function setSecretBinding(runtimeState, namespaceName, key, secretName) {
+  if (!namespaceName || !key) {
+    return;
+  }
+
+  if (!runtimeState.secretBindings) {
+    runtimeState.secretBindings = {};
+  }
+
+  const namespaceBindings = runtimeState.secretBindings[namespaceName] ? { ...runtimeState.secretBindings[namespaceName] } : {};
+  const normalizedSecretName = String(secretName || "").trim();
+  if (normalizedSecretName) {
+    namespaceBindings[key] = normalizedSecretName;
+  } else {
+    delete namespaceBindings[key];
+  }
+
+  if (Object.keys(namespaceBindings).length === 0) {
+    delete runtimeState.secretBindings[namespaceName];
+  } else {
+    runtimeState.secretBindings[namespaceName] = namespaceBindings;
+  }
+}
+
 function buildHTTPNodeState(node, state) {
   const snapshotResult = resolveHTTPSnapshot(node, state);
   const runtimeEntry = node.name ? state.runtimeState.http[node.name] : null;
@@ -588,8 +705,8 @@ function buildHTTPNodeState(node, state) {
   };
 }
 
-function resolveHTTPSnapshot(node, state) {
-  const context = buildTemplateContext(state.parsedDocument.nodes, state.runtimeState);
+function resolveHTTPSnapshot(node, state, options = {}) {
+  const context = buildTemplateContext(state.parsedDocument.nodes, state.runtimeState, options);
 
   try {
     return {
@@ -617,14 +734,28 @@ function resolveHTTPSnapshot(node, state) {
   }
 }
 
-function buildTemplateContext(nodes, runtimeState) {
+function buildTemplateContext(nodes, runtimeState, options = {}) {
   const variablesByNamespace = {};
   const httpEntriesByCell = {};
+  const secretSlotsByNamespace = {};
 
   nodes.forEach((node) => {
     if (node.kind === "cell" && node.cellType === "variables" && node.name) {
       const namespaceValues = {};
       (node.variables || []).forEach((entry) => {
+        if (entry.isSecretSlot) {
+          const secretName = getSecretBinding(runtimeState, node.name, entry.key);
+          namespaceValues[entry.key] = buildSecretSlotTemplateValue(node.name, entry.key, secretName, options);
+          if (!secretSlotsByNamespace[node.name]) {
+            secretSlotsByNamespace[node.name] = {};
+          }
+          secretSlotsByNamespace[node.name][entry.key] = {
+            namespaceName: node.name,
+            key: entry.key,
+            secretName
+          };
+          return;
+        }
         namespaceValues[entry.key] = entry.value;
       });
       variablesByNamespace[node.name] = namespaceValues;
@@ -632,9 +763,10 @@ function buildTemplateContext(nodes, runtimeState) {
   });
 
   Object.entries(runtimeState.variables || {}).forEach(([namespaceName, values]) => {
+    const secretSlots = secretSlotsByNamespace[namespaceName] || {};
     variablesByNamespace[namespaceName] = {
       ...(variablesByNamespace[namespaceName] || {}),
-      ...(values || {})
+      ...Object.fromEntries(Object.entries(values || {}).filter(([key]) => !Object.prototype.hasOwnProperty.call(secretSlots, key)))
     };
   });
 
@@ -644,7 +776,19 @@ function buildTemplateContext(nodes, runtimeState) {
 
   return {
     variablesByNamespace,
-    httpEntriesByCell
+    httpEntriesByCell,
+    secretSlotsByNamespace
+  };
+}
+
+function buildSecretSlotTemplateValue(namespaceName, key, secretName, options = {}) {
+  return {
+    __rundownSecretSlot: true,
+    namespaceName,
+    key,
+    secretName: secretName || "",
+    mode: options.secretMode || "redacted",
+    secretValuesByReference: options.secretValuesByReference || {}
   };
 }
 
@@ -702,14 +846,34 @@ function resolveTemplateExpression(expression, context) {
   }
 
   if (Object.prototype.hasOwnProperty.call(context.variablesByNamespace, root)) {
-    return resolvePathValue(context.variablesByNamespace[root], segments, true, path);
+    return unwrapTemplateValue(resolvePathValue(context.variablesByNamespace[root], segments, true, path), path);
   }
 
   if (Object.prototype.hasOwnProperty.call(context.httpEntriesByCell, root)) {
-    return resolvePathValue(context.httpEntriesByCell[root], segments, false, path);
+    return unwrapTemplateValue(resolvePathValue(context.httpEntriesByCell[root], segments, false, path), path);
   }
 
   throw new Error(`Unknown template root: ${root}`);
+}
+
+function unwrapTemplateValue(value, originalPath) {
+  if (!value || typeof value !== "object" || value.__rundownSecretSlot !== true) {
+    return value;
+  }
+
+  if (!value.secretName) {
+    throw new Error(`Secret not bound: ${value.namespaceName}.${value.key}`);
+  }
+
+  if (value.mode === "actual") {
+    const reference = `${value.namespaceName}.${value.key}`;
+    if (Object.prototype.hasOwnProperty.call(value.secretValuesByReference || {}, reference)) {
+      return value.secretValuesByReference[reference];
+    }
+    throw new Error(`Secret unavailable: ${value.secretName}`);
+  }
+
+  return "*****";
 }
 
 function resolvePathValue(value, segments, allowFlatKeyLookup, originalPath) {
@@ -821,10 +985,20 @@ async function runHTTPCell(node) {
   renderApp();
 
   try {
-    const response = await fetch(httpState.snapshot.url, {
-      method: httpState.snapshot.method,
-      headers: Object.fromEntries(httpState.snapshot.headers.map((header) => [header.name, header.value])),
-      body: shouldSendBody(httpState.snapshot.method, httpState.snapshot.body) ? httpState.snapshot.body : undefined
+    const secretValuesByReference = await resolveSecretValuesForHTTPNode(node, appState);
+    const actualSnapshotResult = resolveHTTPSnapshot(node, appState, {
+      secretMode: "actual",
+      secretValuesByReference
+    });
+    if (actualSnapshotResult.error) {
+      throw new Error(actualSnapshotResult.error);
+    }
+
+    const actualSnapshot = actualSnapshotResult.snapshot;
+    const response = await fetch(actualSnapshot.url, {
+      method: actualSnapshot.method,
+      headers: Object.fromEntries(actualSnapshot.headers.map((header) => [header.name, header.value])),
+      body: shouldSendBody(actualSnapshot.method, actualSnapshot.body) ? actualSnapshot.body : undefined
     });
 
     const responseText = await response.text();
@@ -847,6 +1021,75 @@ async function runHTTPCell(node) {
     appState.inflightRequests.delete(node.name);
     renderApp();
   }
+}
+
+async function resolveSecretValuesForHTTPNode(node, state) {
+  const secretBindingsByReference = collectSecretBindingsForHTTPNode(node, state);
+  const secretNames = [...new Set(Object.values(secretBindingsByReference).filter(Boolean))];
+  if (!secretNames.length) {
+    return {};
+  }
+
+  if (!window.rundownHost || typeof window.rundownHost.request !== "function") {
+    throw new Error("RunDown host bridge is unavailable");
+  }
+
+  const response = await window.rundownHost.request("resolveSecrets", { secretNames });
+  const secretsByName = response && response.secrets ? response.secrets : {};
+  return Object.fromEntries(Object.entries(secretBindingsByReference).map(([reference, secretName]) => {
+    if (!Object.prototype.hasOwnProperty.call(secretsByName, secretName)) {
+      throw new Error(`Secret unavailable: ${secretName}`);
+    }
+    return [reference, secretsByName[secretName]];
+  }));
+}
+
+function collectSecretBindingsForHTTPNode(node, state) {
+  const context = buildTemplateContext(state.parsedDocument.nodes, state.runtimeState);
+  const bindings = {};
+  const templateSources = [
+    node.method || "GET",
+    node.url || "",
+    ...(node.headers || []).flatMap((header) => [header.name || "", header.value || ""]),
+    node.body || ""
+  ];
+
+  templateSources.forEach((source) => {
+    collectTemplateExpressions(source).forEach((expression) => {
+      const secretSlot = getSecretSlotForTemplateExpression(expression, context);
+      if (secretSlot && secretSlot.secretName) {
+        bindings[`${secretSlot.namespaceName}.${secretSlot.key}`] = secretSlot.secretName;
+      }
+    });
+  });
+
+  return bindings;
+}
+
+function collectTemplateExpressions(text) {
+  const expressions = [];
+  String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expression) => {
+    expressions.push(String(expression || "").trim());
+    return "";
+  });
+  return expressions;
+}
+
+function getSecretSlotForTemplateExpression(expression, context) {
+  const path = String(expression || "").trim();
+  if (!path) {
+    return null;
+  }
+
+  const segments = path.split(".").filter(Boolean);
+  const root = segments.shift();
+  if (!root || !Object.prototype.hasOwnProperty.call(context.secretSlotsByNamespace, root)) {
+    return null;
+  }
+
+  const key = segments.join(".");
+  const namespaceSlots = context.secretSlotsByNamespace[root] || {};
+  return Object.prototype.hasOwnProperty.call(namespaceSlots, key) ? namespaceSlots[key] : null;
 }
 
 function shouldSendBody(method, body) {
@@ -881,12 +1124,14 @@ function persistRuntimeStateToHost() {
     return;
   }
 
-  window.rundownHost.persistRuntimeState(buildPersistedRuntimeState(appState.runtimeState), bootstrap.cachePath);
+  window.rundownHost.persistRuntimeState(buildPersistedRuntimeState(appState.runtimeState, appState.parsedDocument.nodes), bootstrap.cachePath);
 }
 
-function buildPersistedRuntimeState(runtimeState) {
+function buildPersistedRuntimeState(runtimeState, nodes = []) {
+  const secretSlotKeys = buildSecretSlotKeyMap(nodes);
   return {
-    variables: runtimeState.variables || {},
+    variables: sanitizePersistedVariables(runtimeState.variables || {}, secretSlotKeys),
+    secretBindings: sanitizePersistedSecretBindings(runtimeState.secretBindings || {}, secretSlotKeys),
     http: Object.fromEntries(Object.entries(runtimeState.http || {}).map(([cellName, entry]) => [
       cellName,
       {
@@ -897,6 +1142,47 @@ function buildPersistedRuntimeState(runtimeState) {
       }
     ]))
   };
+}
+
+function buildSecretSlotKeyMap(nodes) {
+  const slots = {};
+  (nodes || []).forEach((node) => {
+    if (node.kind !== "cell" || node.cellType !== "variables" || !node.name) {
+      return;
+    }
+
+    (node.variables || []).forEach((entry) => {
+      if (!entry.isSecretSlot) {
+        return;
+      }
+
+      if (!slots[node.name]) {
+        slots[node.name] = new Set();
+      }
+      slots[node.name].add(entry.key);
+    });
+  });
+  return slots;
+}
+
+function sanitizePersistedVariables(variables, secretSlotKeys) {
+  return Object.fromEntries(Object.entries(variables || {}).map(([namespaceName, values]) => {
+    const secretKeys = secretSlotKeys[namespaceName] || new Set();
+    return [
+      namespaceName,
+      Object.fromEntries(Object.entries(values || {}).filter(([key]) => !secretKeys.has(key)))
+    ];
+  }).filter(([, values]) => Object.keys(values).length > 0));
+}
+
+function sanitizePersistedSecretBindings(secretBindings, secretSlotKeys) {
+  return Object.fromEntries(Object.entries(secretBindings || {}).map(([namespaceName, values]) => {
+    const secretKeys = secretSlotKeys[namespaceName] || new Set();
+    return [
+      namespaceName,
+      Object.fromEntries(Object.entries(values || {}).filter(([key, secretName]) => secretKeys.has(key) && String(secretName || "").trim()))
+    ];
+  }).filter(([, values]) => Object.keys(values).length > 0));
 }
 
 function sanitizeClassName(value) {
