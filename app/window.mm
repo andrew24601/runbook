@@ -133,7 +133,8 @@ NSDictionary* EmptyRuntimeStateObject() {
         @"httpEntryCount": @0,
         @"variables": @{},
         @"secretBindings": @{},
-        @"http": @{}
+        @"http": @{},
+        @"javascript": @{}
     };
 }
 
@@ -142,13 +143,15 @@ NSDictionary* NormalizeRuntimeStateObject(id value) {
     NSDictionary* variablesObject = [object[@"variables"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"variables"] : @{};
     NSDictionary* secretBindingsObject = [object[@"secretBindings"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"secretBindings"] : @{};
     NSDictionary* httpObject = [object[@"http"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"http"] : @{};
+    NSDictionary* javascriptObject = [object[@"javascript"] isKindOfClass:[NSDictionary class]] ? (NSDictionary*)object[@"javascript"] : @{};
 
     return @{
         @"variableNamespaceCount": [NSNumber numberWithUnsignedInteger:[variablesObject count]],
         @"httpEntryCount": [NSNumber numberWithUnsignedInteger:[httpObject count]],
         @"variables": variablesObject,
         @"secretBindings": secretBindingsObject,
-        @"http": httpObject
+        @"http": httpObject,
+        @"javascript": javascriptObject
     };
 }
 
@@ -367,6 +370,21 @@ static void ConfigureWindowTitleForSourceLabel(NSWindow* window, NSString* sourc
     [window setTitle:fallbackTitle];
 }
 
+static WKWebView* FindWorkbookWebView(NSView* view) {
+    if ([view isKindOfClass:[WKWebView class]]) {
+        return (WKWebView*)view;
+    }
+
+    for (NSView* subview in [view subviews]) {
+        WKWebView* match = FindWorkbookWebView(subview);
+        if (match != nil) {
+            return match;
+        }
+    }
+
+    return nil;
+}
+
 NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<WorkbookDocumentSource> content, NSString** errorText) {
     NSString* resolvedWindowTitle = [TrimString(windowTitle ?: @"") length] > 0 ? TrimString(windowTitle ?: @"") : BundleDisplayName();
     if (content == nullptr) {
@@ -436,6 +454,16 @@ NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<Wo
     return [window autorelease];
 }
 
+void RunDownToggleHiddenJavascriptCells(NSWindow* window) {
+    WKWebView* webView = FindWorkbookWebView(window != nil ? [window contentView] : nil);
+    if (webView == nil) {
+        return;
+    }
+
+    [webView evaluateJavaScript:@"window.RunDown && window.RunDown.toggleHiddenJavascriptCells && window.RunDown.toggleHiddenJavascriptCells();"
+              completionHandler:nil];
+}
+
 NSMenu* BuildApplicationMenu(NSString* appName) {
     NSMenu* mainMenu = [[NSMenu alloc] initWithTitle:@"MainMenu"];
 
@@ -477,6 +505,16 @@ NSMenu* BuildApplicationMenu(NSString* appName) {
     [fileMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
     [fileItem setSubmenu:fileMenu];
 
+    NSMenuItem* viewItem = [[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""];
+    [mainMenu addItem:viewItem];
+    NSMenu* viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+    NSMenuItem* hiddenJavascriptItem = [viewMenu addItemWithTitle:@"Show/Hide JavaScript Cells"
+                                                           action:@selector(toggleHiddenJavascriptCells:)
+                                                    keyEquivalent:@"j"];
+    [hiddenJavascriptItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [hiddenJavascriptItem setTarget:[NSApp delegate]];
+    [viewItem setSubmenu:viewMenu];
+
     NSMenuItem* windowItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:nil keyEquivalent:@""];
     [mainMenu addItem:windowItem];
     NSMenu* windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
@@ -490,6 +528,8 @@ NSMenu* BuildApplicationMenu(NSString* appName) {
 
     [windowMenu release];
     [windowItem release];
+    [viewMenu release];
+    [viewItem release];
     [openRecentMenu release];
     [openRecentItem release];
     [fileMenu release];

@@ -14,7 +14,8 @@ const bootstrap = window.__RUNDOWN_BOOTSTRAP__ || {
     httpEntryCount: 0,
     variables: {},
     secretBindings: {},
-    http: {}
+    http: {},
+    javascript: {}
   }
 };
 
@@ -22,16 +23,39 @@ const appState = {
   runtimeState: normalizeRuntimeState(bootstrap.runtimeState),
   parsedDocument: parseWorkbookDocument(bootstrap.document && bootstrap.document.source ? bootstrap.document.source : ""),
   inflightRequests: new Set(),
+  inflightScripts: new Set(),
   expandedHTTPCells: new Set(),
   secretNames: [],
   secretNamesLoaded: false,
-  secretNamesError: ""
+  secretNamesError: "",
+  showHiddenJavascriptCells: false,
+  javascriptExecutionActive: false,
+  javascriptExecutionScheduled: false,
+  pendingJavascriptStartIndex: Infinity
+};
+
+window.RunDown = {
+  ...(window.RunDown || {}),
+  areHiddenJavascriptCellsVisible() {
+    return appState.showHiddenJavascriptCells;
+  },
+  setHiddenJavascriptCellsVisible(isVisible) {
+    appState.showHiddenJavascriptCells = Boolean(isVisible);
+    renderApp();
+    return appState.showHiddenJavascriptCells;
+  },
+  toggleHiddenJavascriptCells() {
+    appState.showHiddenJavascriptCells = !appState.showHiddenJavascriptCells;
+    renderApp();
+    return appState.showHiddenJavascriptCells;
+  }
 };
 
 const app = document.getElementById("app");
 if (app) {
   renderApp();
   refreshSecretNamesFromHost();
+  scheduleJavascriptExecutionFromIndex(0);
 }
 
 window.addEventListener("pagehide", () => {
@@ -52,7 +76,8 @@ function normalizeRuntimeState(state) {
     httpEntryCount: state && typeof state.httpEntryCount === "number" ? state.httpEntryCount : 0,
     variables: state && state.variables ? state.variables : {},
     secretBindings: state && state.secretBindings ? state.secretBindings : {},
-    http: state && state.http ? state.http : {}
+    http: state && state.http ? state.http : {},
+    javascript: state && state.javascript ? state.javascript : {}
   };
 }
 
@@ -147,7 +172,7 @@ function parseFenceInfo(infoString) {
 }
 
 function isWorkbookFenceLanguage(language) {
-  return language === "http" || language === "variables" || language === "assert" || language === "json";
+  return language === "http" || language === "variables" || language === "assert" || language === "json" || language === "javascript";
 }
 
 function parseWorkbookCell(token, fence, nodeIndex) {
@@ -269,8 +294,21 @@ function renderDocumentFlow(nodes, state) {
     return section;
   }
 
-  nodes.forEach((node) => section.appendChild(renderDocumentNode(node, state)));
+  nodes.forEach((node) => {
+    if (node.cellType === "javascript") {
+      const javascriptState = buildJavascriptNodeState(node, state);
+      if (!shouldRenderJavascriptCell(javascriptState, state)) {
+        return;
+      }
+    }
+
+    section.appendChild(renderDocumentNode(node, state));
+  });
   return section;
+}
+
+function shouldRenderJavascriptCell(javascriptState, state) {
+  return state.showHiddenJavascriptCells || javascriptState.bloomState === "failure";
 }
 
 function renderDocumentNode(node, state) {
@@ -287,11 +325,13 @@ function renderDocumentNode(node, state) {
   }
 
   const httpState = node.cellType === "http" ? buildHTTPNodeState(node, state) : null;
-  if (httpState) {
-    article.classList.add("document-node-bloom", `document-node-${httpState.bloomState}`);
+  const javascriptState = node.cellType === "javascript" ? buildJavascriptNodeState(node, state) : null;
+  if (httpState || javascriptState) {
+    const bloomState = httpState ? httpState.bloomState : javascriptState.bloomState;
+    article.classList.add("document-node-bloom", `document-node-${bloomState}`);
   }
 
-  const detail = renderNodeDetail(node, state, httpState);
+  const detail = renderNodeDetail(node, state, httpState, javascriptState);
   if (detail) {
     article.appendChild(detail);
   }
@@ -310,7 +350,7 @@ function renderRuntimePill(node, httpState) {
   return pill;
 }
 
-function renderNodeDetail(node, state, precomputedHTTPState = null) {
+function renderNodeDetail(node, state, precomputedHTTPState = null, precomputedJavascriptState = null) {
   if (node.cellType === "http") {
     return renderHTTPCell(node, precomputedHTTPState || buildHTTPNodeState(node, state), state);
   }
@@ -321,6 +361,10 @@ function renderNodeDetail(node, state, precomputedHTTPState = null) {
 
   if (node.cellType === "json") {
     return renderJSONCodeBlock(resolveJSONNodeText(node, state));
+  }
+
+  if (node.cellType === "javascript") {
+    return renderJavascriptCell(node, precomputedJavascriptState || buildJavascriptNodeState(node, state), state);
   }
 
   return renderCodeBlock(node.source || "");
@@ -382,6 +426,19 @@ function renderHTTPCell(node, httpState, state) {
   return wrap;
 }
 
+function renderJavascriptCell(node, javascriptState, state) {
+  const wrap = document.createElement("div");
+  wrap.className = "javascript-cell";
+
+  if (javascriptState.outputText) {
+    wrap.appendChild(renderRuntimeSection(javascriptState.outputLabel, javascriptState.outputText, javascriptState.bloomState));
+  } else if (state.showHiddenJavascriptCells) {
+    wrap.appendChild(renderRuntimeSection("Status", javascriptState.statusText, javascriptState.bloomState));
+  }
+
+  return wrap;
+}
+
 function renderVariablesEditor(node, state) {
   if (!node.name || !Array.isArray(node.variables) || !node.variables.length) {
     return renderCodeBlock(node.source || "");
@@ -400,7 +457,7 @@ function renderVariablesEditor(node, state) {
     row.appendChild(key);
 
     if (entry.isSecretSlot) {
-      row.appendChild(renderSecretBindingSelect(node.name, entry, state));
+      row.appendChild(renderSecretBindingSelect(node.name, entry, state, node.nodeIndex));
       editor.appendChild(row);
       return;
     }
@@ -416,6 +473,7 @@ function renderVariablesEditor(node, state) {
       setVariableValue(state.runtimeState, node.name, entry.key, input.value, entry.value);
       persistRuntimeStateToHost();
       refreshTemplateDrivenNodes();
+      scheduleJavascriptExecutionFromIndex(node.nodeIndex + 1);
     });
     input.addEventListener("change", () => {
       persistRuntimeStateToHost();
@@ -428,7 +486,7 @@ function renderVariablesEditor(node, state) {
   return editor;
 }
 
-function renderSecretBindingSelect(namespaceName, entry, state) {
+function renderSecretBindingSelect(namespaceName, entry, state, nodeIndex) {
   const select = document.createElement("select");
   select.className = "variable-input variable-secret-select";
   select.value = getSecretBinding(state.runtimeState, namespaceName, entry.key);
@@ -462,13 +520,14 @@ function renderSecretBindingSelect(namespaceName, entry, state) {
     setSecretBinding(state.runtimeState, namespaceName, entry.key, select.value);
     persistRuntimeStateToHost();
     refreshTemplateDrivenNodes();
+    scheduleJavascriptExecutionFromIndex(nodeIndex + 1);
   });
   return select;
 }
 
 function refreshTemplateDrivenNodes() {
   appState.parsedDocument.nodes.forEach((node) => {
-    if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json"))) {
+    if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json" && node.cellType !== "javascript"))) {
       return;
     }
 
@@ -490,6 +549,18 @@ function refreshTemplateDrivenNodes() {
       article.className = `document-node document-node-${sanitizeClassName(node.cellType)}`;
       article.classList.add("document-node-bloom", `document-node-${httpState.bloomState}`);
       article.replaceChildren(renderHTTPCell(node, httpState, appState));
+      return;
+    }
+
+    if (node.cellType === "javascript") {
+      const javascriptState = buildJavascriptNodeState(node, appState);
+      if (!shouldRenderJavascriptCell(javascriptState, appState)) {
+        article.remove();
+        return;
+      }
+      article.className = `document-node document-node-${sanitizeClassName(node.cellType)}`;
+      article.classList.add("document-node-bloom", `document-node-${javascriptState.bloomState}`);
+      article.replaceChildren(renderJavascriptCell(node, javascriptState, appState));
       return;
     }
 
@@ -705,6 +776,127 @@ function buildHTTPNodeState(node, state) {
   };
 }
 
+function buildJavascriptNodeState(node, state) {
+  const snapshot = buildJavascriptExecutionSnapshot(node, state);
+  const runtimeEntry = node.name ? state.runtimeState.javascript[node.name] : null;
+  const isOutOfDate = runtimeEntry && runtimeEntry.inputHash !== snapshot.inputHash;
+
+  if (!node.name) {
+    return {
+      snapshot,
+      statusText: "Name required",
+      bloomState: "failure",
+      outputText: "JavaScript cells need a name so later cells can receive their output.",
+      outputLabel: "Script error"
+    };
+  }
+
+  if (state.inflightScripts.has(node.name)) {
+    return {
+      snapshot,
+      statusText: "Running script...",
+      bloomState: "running",
+      outputText: "",
+      outputLabel: "Output"
+    };
+  }
+
+  if (!runtimeEntry) {
+    return {
+      snapshot,
+      statusText: "Ready to run.",
+      bloomState: "idle",
+      outputText: "",
+      outputLabel: "Output"
+    };
+  }
+
+  if (isOutOfDate) {
+    return {
+      snapshot,
+      statusText: "Out of date",
+      bloomState: "outofdate",
+      outputText: runtimeEntry.outputText || "",
+      outputLabel: "Cached output (out of date)"
+    };
+  }
+
+  const failed = runtimeEntry.status === "failure";
+  return {
+    snapshot,
+    statusText: runtimeEntry.statusText || (failed ? "Script failed" : "Completed"),
+    bloomState: failed ? "failure" : "success",
+    outputText: runtimeEntry.outputText || "",
+    outputLabel: failed ? "Script error" : "Output"
+  };
+}
+
+function buildJavascriptExecutionSnapshot(node, state) {
+  const parameterContext = buildJavascriptParameterContext(state.parsedDocument.nodes, state.runtimeState, node.nodeIndex);
+  return {
+    source: node.source || "",
+    paramNames: parameterContext.paramNames,
+    paramValues: parameterContext.paramValues,
+    inputHash: stableStringify({
+      source: node.source || "",
+      params: parameterContext.paramNames.map((name, index) => [name, parameterContext.paramValues[index]])
+    })
+  };
+}
+
+function buildJavascriptParameterContext(nodes, runtimeState, beforeNodeIndex) {
+  const outputsByName = {};
+
+  (nodes || []).forEach((node) => {
+    if (node.kind !== "cell" || !node.name || node.nodeIndex >= beforeNodeIndex || !isValidJavascriptIdentifier(node.name)) {
+      return;
+    }
+
+    if (node.cellType === "variables") {
+      outputsByName[node.name] = buildVariablesOutput(node, runtimeState);
+      return;
+    }
+
+    if (node.cellType === "http" && runtimeState.http && Object.prototype.hasOwnProperty.call(runtimeState.http, node.name)) {
+      outputsByName[node.name] = buildHTTPRuntimeEnvelope(runtimeState.http[node.name] || {});
+      return;
+    }
+
+    if (node.cellType === "javascript" && runtimeState.javascript && Object.prototype.hasOwnProperty.call(runtimeState.javascript, node.name)) {
+      const entry = runtimeState.javascript[node.name] || {};
+      if (entry.status === "success") {
+        outputsByName[node.name] = entry.output;
+      }
+    }
+  });
+
+  const paramNames = Object.keys(outputsByName);
+  return {
+    paramNames,
+    paramValues: paramNames.map((name) => outputsByName[name])
+  };
+}
+
+function buildVariablesOutput(node, runtimeState) {
+  const namespaceValues = {};
+  (node.variables || []).forEach((entry) => {
+    if (entry.isSecretSlot) {
+      namespaceValues[entry.key] = getSecretBinding(runtimeState, node.name, entry.key) ? "*****" : "";
+      return;
+    }
+    namespaceValues[entry.key] = entry.value;
+  });
+
+  Object.entries(runtimeState.variables && runtimeState.variables[node.name] ? runtimeState.variables[node.name] : {}).forEach(([key, value]) => {
+    const entry = (node.variables || []).find((candidate) => candidate.key === key);
+    if (!entry || !entry.isSecretSlot) {
+      namespaceValues[key] = value;
+    }
+  });
+
+  return namespaceValues;
+}
+
 function resolveHTTPSnapshot(node, state, options = {}) {
   const context = buildTemplateContext(state.parsedDocument.nodes, state.runtimeState, options);
 
@@ -737,6 +929,7 @@ function resolveHTTPSnapshot(node, state, options = {}) {
 function buildTemplateContext(nodes, runtimeState, options = {}) {
   const variablesByNamespace = {};
   const httpEntriesByCell = {};
+  const javascriptEntriesByCell = {};
   const secretSlotsByNamespace = {};
 
   nodes.forEach((node) => {
@@ -774,9 +967,16 @@ function buildTemplateContext(nodes, runtimeState, options = {}) {
     httpEntriesByCell[cellName] = buildHTTPRuntimeEnvelope(entry || {});
   });
 
+  Object.entries(runtimeState.javascript || {}).forEach(([cellName, entry]) => {
+    if (entry && entry.status === "success") {
+      javascriptEntriesByCell[cellName] = entry.output;
+    }
+  });
+
   return {
     variablesByNamespace,
     httpEntriesByCell,
+    javascriptEntriesByCell,
     secretSlotsByNamespace
   };
 }
@@ -851,6 +1051,10 @@ function resolveTemplateExpression(expression, context) {
 
   if (Object.prototype.hasOwnProperty.call(context.httpEntriesByCell, root)) {
     return unwrapTemplateValue(resolvePathValue(context.httpEntriesByCell[root], segments, false, path), path);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(context.javascriptEntriesByCell, root)) {
+    return unwrapTemplateValue(resolvePathValue(context.javascriptEntriesByCell[root], segments, false, path), path);
   }
 
   throw new Error(`Unknown template root: ${root}`);
@@ -970,6 +1174,246 @@ function formatPossiblyJSONText(text) {
   }
 }
 
+function scheduleJavascriptExecutionFromIndex(startIndex = 0) {
+  const normalizedStartIndex = Number.isFinite(startIndex) ? startIndex : 0;
+  appState.pendingJavascriptStartIndex = Math.min(appState.pendingJavascriptStartIndex, normalizedStartIndex);
+  if (appState.javascriptExecutionActive || appState.javascriptExecutionScheduled) {
+    return;
+  }
+
+  appState.javascriptExecutionScheduled = true;
+  window.setTimeout(() => {
+    appState.javascriptExecutionScheduled = false;
+    runScheduledJavascriptCells();
+  }, 0);
+}
+
+async function runScheduledJavascriptCells() {
+  if (appState.javascriptExecutionActive) {
+    return;
+  }
+
+  appState.javascriptExecutionActive = true;
+  try {
+    while (Number.isFinite(appState.pendingJavascriptStartIndex)) {
+      const startIndex = appState.pendingJavascriptStartIndex;
+      appState.pendingJavascriptStartIndex = Infinity;
+      await runOutdatedJavascriptCellsFrom(startIndex);
+    }
+  } finally {
+    appState.javascriptExecutionActive = false;
+  }
+}
+
+async function runOutdatedJavascriptCellsFrom(startIndex) {
+  const scripts = appState.parsedDocument.nodes.filter((node) => (
+    node.kind === "cell" &&
+    node.cellType === "javascript" &&
+    node.name &&
+    node.nodeIndex >= startIndex
+  ));
+
+  for (const node of scripts) {
+    if (shouldRunJavascriptCell(node)) {
+      await runJavascriptCell(node);
+    }
+  }
+}
+
+function shouldRunJavascriptCell(node) {
+  if (!node.name || appState.inflightScripts.has(node.name)) {
+    return false;
+  }
+
+  const snapshot = buildJavascriptExecutionSnapshot(node, appState);
+  const runtimeEntry = appState.runtimeState.javascript[node.name];
+  return !runtimeEntry || runtimeEntry.inputHash !== snapshot.inputHash;
+}
+
+async function runJavascriptCell(node, options = {}) {
+  if (!node.name || appState.inflightScripts.has(node.name)) {
+    return;
+  }
+
+  const snapshot = buildJavascriptExecutionSnapshot(node, appState);
+  const runtimeEntry = appState.runtimeState.javascript[node.name];
+  if (!options.force && runtimeEntry && runtimeEntry.inputHash === snapshot.inputHash) {
+    return;
+  }
+
+  appState.inflightScripts.add(node.name);
+  renderApp();
+
+  try {
+    const result = await executeJavascriptInWorker(node.source || "", snapshot.paramNames, snapshot.paramValues, getJavascriptTimeoutMs(node));
+    appState.runtimeState.javascript[node.name] = {
+      status: "success",
+      statusText: "Completed",
+      output: result.output,
+      outputText: result.outputText,
+      inputHash: snapshot.inputHash,
+      updatedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    appState.runtimeState.javascript[node.name] = {
+      status: "failure",
+      statusText: `Script failed: ${error instanceof Error ? error.message : String(error)}`,
+      output: null,
+      outputText: error instanceof Error ? error.message : String(error),
+      inputHash: snapshot.inputHash,
+      updatedAt: new Date().toISOString()
+    };
+  } finally {
+    appState.inflightScripts.delete(node.name);
+    persistRuntimeStateToHost();
+    renderApp();
+  }
+
+  if (options.propagate) {
+    scheduleJavascriptExecutionFromIndex(node.nodeIndex + 1);
+  }
+}
+
+function executeJavascriptInWorker(source, paramNames, paramValues, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (typeof Worker !== "function" || typeof Blob !== "function" || typeof URL === "undefined") {
+      reject(new Error("JavaScript worker execution is unavailable"));
+      return;
+    }
+
+    const workerSource = `
+      function makeSerializable(value) {
+        const seen = new WeakSet();
+        function visit(input, depth) {
+          if (depth > 20) {
+            return "[MaxDepth]";
+          }
+          if (input === undefined) {
+            return null;
+          }
+          if (input === null || typeof input === "string" || typeof input === "boolean") {
+            return input;
+          }
+          if (typeof input === "number") {
+            return Number.isFinite(input) ? input : String(input);
+          }
+          if (typeof input === "bigint" || typeof input === "symbol") {
+            return String(input);
+          }
+          if (typeof input === "function") {
+            return "[Function" + (input.name ? " " + input.name : "") + "]";
+          }
+          if (input instanceof Error) {
+            return { name: input.name, message: input.message, stack: input.stack || "" };
+          }
+          if (Array.isArray(input)) {
+            return input.map((item) => visit(item, depth + 1));
+          }
+          if (typeof input === "object") {
+            if (seen.has(input)) {
+              return "[Circular]";
+            }
+            seen.add(input);
+            const output = {};
+            Object.entries(input).forEach(([key, item]) => {
+              output[key] = visit(item, depth + 1);
+            });
+            return output;
+          }
+          return String(input);
+        }
+        return visit(value, 0);
+      }
+
+      function formatOutput(value, serializableValue) {
+        if (value === undefined) {
+          return "undefined";
+        }
+        if (typeof value === "string") {
+          return value;
+        }
+        return JSON.stringify(serializableValue, null, 2);
+      }
+
+      self.onmessage = async (event) => {
+        const payload = event.data || {};
+        try {
+          const fn = new Function(...payload.paramNames, '"use strict";\\n' + payload.source);
+          const value = await fn(...payload.paramValues);
+          const output = makeSerializable(value);
+          self.postMessage({ ok: true, output, outputText: formatOutput(value, output) });
+        } catch (error) {
+          self.postMessage({ ok: false, error: error && error.message ? error.message : String(error) });
+        }
+      };
+    `;
+
+    const blob = new Blob([workerSource], { type: "application/javascript" });
+    const workerURL = URL.createObjectURL(blob);
+    const worker = new Worker(workerURL);
+    let settled = false;
+
+    const cleanup = () => {
+      worker.terminate();
+      URL.revokeObjectURL(workerURL);
+    };
+
+    const timer = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(new Error(`Timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    worker.onmessage = (event) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timer);
+      cleanup();
+      const message = event.data || {};
+      if (message.ok) {
+        resolve({ output: message.output, outputText: message.outputText || "" });
+      } else {
+        reject(new Error(message.error || "Script execution failed"));
+      }
+    };
+
+    worker.onerror = (event) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timer);
+      cleanup();
+      reject(new Error(event.message || "Script execution failed"));
+    };
+
+    try {
+      worker.postMessage({ source, paramNames, paramValues });
+    } catch (error) {
+      if (!settled) {
+        settled = true;
+        window.clearTimeout(timer);
+        cleanup();
+        reject(error);
+      }
+    }
+  });
+}
+
+function getJavascriptTimeoutMs(node) {
+  const rawValue = node.attributes.timeoutMs || node.attributes.timeout || "";
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return 2000;
+  }
+  return Math.min(Math.max(parsed, 100), 30000);
+}
+
 async function runHTTPCell(node) {
   if (!node.name || appState.inflightRequests.has(node.name)) {
     return;
@@ -1020,6 +1464,7 @@ async function runHTTPCell(node) {
   } finally {
     appState.inflightRequests.delete(node.name);
     renderApp();
+    scheduleJavascriptExecutionFromIndex(node.nodeIndex + 1);
   }
 }
 
@@ -1140,6 +1585,17 @@ function buildPersistedRuntimeState(runtimeState, nodes = []) {
         ...(typeof entry.statusCode === "number" ? { statusCode: entry.statusCode } : {}),
         ...(entry.request ? { request: normalizeSnapshot(entry.request) } : {})
       }
+    ])),
+    javascript: Object.fromEntries(Object.entries(runtimeState.javascript || {}).map(([cellName, entry]) => [
+      cellName,
+      {
+        status: entry.status === "failure" ? "failure" : "success",
+        statusText: entry.statusText || "",
+        output: sanitizePersistedJavascriptOutput(entry.output),
+        outputText: entry.outputText || "",
+        inputHash: entry.inputHash || "",
+        updatedAt: entry.updatedAt || ""
+      }
     ]))
   };
 }
@@ -1187,4 +1643,72 @@ function sanitizePersistedSecretBindings(secretBindings, secretSlotKeys) {
 
 function sanitizeClassName(value) {
   return String(value || "node").replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+}
+
+function isValidJavascriptIdentifier(value) {
+  const name = String(value || "");
+  const reservedWords = new Set([
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "export",
+    "extends",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "let",
+    "new",
+    "return",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield"
+  ]);
+  return /^[A-Za-z_$][0-9A-Za-z_$]*$/.test(name) && !reservedWords.has(name);
+}
+
+function stableStringify(value) {
+  return JSON.stringify(value, (_, item) => {
+    if (item === undefined) {
+      return null;
+    }
+    if (typeof item === "number" && !Number.isFinite(item)) {
+      return String(item);
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return item;
+    }
+    return Object.keys(item).sort().reduce((sorted, key) => {
+      sorted[key] = item[key];
+      return sorted;
+    }, {});
+  });
+}
+
+function sanitizePersistedJavascriptOutput(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
 }

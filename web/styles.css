@@ -98,7 +98,8 @@ body {
   box-shadow: 0 0 0 3px rgba(46, 124, 79, 0.12);
 }
 
-.http-cell {
+.http-cell,
+.javascript-cell {
   display: grid;
   gap: 10px;
 }
@@ -198,6 +199,7 @@ body {
 .document-node-http,
 .document-node-variables,
 .document-node-json,
+.document-node-javascript,
 .document-node-assert {
   border-radius: 8px;
   padding: 12px;
@@ -414,6 +416,7 @@ body {
   .document-node-http,
   .document-node-variables,
   .document-node-json,
+  .document-node-javascript,
   .document-node-assert {
     padding: 12px;
   }

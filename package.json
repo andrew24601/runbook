@@ -5,6 +5,6 @@
     "app": "node build.mjs && open -n build/RunDown.app"
   },
   "dependencies": {
-    "@andrew24601/reckon": "^0.1.0"
+    "@andrew24601/reckon": "^0.1.1"
   }
 }

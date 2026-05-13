@@ -88,10 +88,25 @@ static NSString* BuiltInWelcomeWorkbook(void) {
         "```json src=\"profile.body\"\n"
         "```\n"
         "\n"
+        "JavaScript cells can compute from any named outputs above them. This one reruns when the variables or profile response changes.\n"
+        "\n"
+        "```javascript name=\"profileSummary\"\n"
+        "if (typeof profile === \"undefined\" || !profile.body) {\n"
+        "  return { userId: my_vars.user, name: \"\", city: \"\" };\n"
+        "}\n"
+        "\n"
+        "return {\n"
+        "  userId: my_vars.user,\n"
+        "  name: profile.body.name,\n"
+        "  city: profile.body.address.city\n"
+        "};\n"
+        "```\n"
+        "\n"
         "Once the request runs, markdown can reflect the cached response.\n"
         "\n"
         "- Profile status: {{profile.status}}\n"
-        "- Profile name: {{profile.body.name}}\n";
+        "- Profile name: {{profile.body.name}}\n"
+        "- Profile city: {{profileSummary.city}}\n";
 }
 
 static std::shared_ptr<WorkbookDocumentSource> LoadWorkbookDocumentSource(NSString* workbookPath, NSString** errorText) {
@@ -217,6 +232,7 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
 - (void)openWorkbookPaths:(NSArray<NSString*>*)workbookPaths;
 - (void)persistCurrentWorkbookSession;
 - (void)rebuildRecentDocumentsMenu:(NSMenu*)menu;
+- (IBAction)toggleHiddenJavascriptCells:(id)sender;
 
 @end
 
@@ -360,6 +376,11 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
 - (IBAction)clearRecentDocuments:(id)sender {
     (void)sender;
     [[NSDocumentController sharedDocumentController] clearRecentDocuments:nil];
+}
+
+- (IBAction)toggleHiddenJavascriptCells:(id)sender {
+    (void)sender;
+    RunDownToggleHiddenJavascriptCells([NSApp keyWindow]);
 }
 
 - (IBAction)showSecrets:(id)sender {

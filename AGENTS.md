@@ -12,8 +12,8 @@ RunDown is a macOS app built with Objective-C++, a native AppKit bridge, and a R
 
 Data flow:
 1. `app/main.mm` enters the native application.
-2. `bridge/window_controls.mm` loads markdown source from disk or the bundled welcome document.
-3. `bridge/window.mm` boots the WKWebView with document source and cached runtime JSON.
+2. `app/window_controls.mm` loads markdown source from disk or the bundled welcome document.
+3. `app/window.mm` boots the WKWebView with document source and cached runtime JSON.
 4. `web/src/app.js` parses markdown, renders the document, executes HTTP cells, edits variables, and persists runtime state back through the native host bridge.
 
 ## Boundary Policy
@@ -26,10 +26,10 @@ Data flow:
 - `design.md`: Product and architecture design notes.
 - `Reckonfile.ts`: Build graph for the native app bundle, icon generation, and web bundle integration.
 - `app/main.mm`: Minimal native app entrypoint.
-- `bridge/window.hpp`: Public native bridge API.
-- `bridge/window_internal.h`: Shared internal declarations for bridge implementation files.
-- `bridge/window.mm`: Native window entrypoint, WKWebView bootstrap, and runtime-cache bootstrap helpers.
-- `bridge/window_controls.mm`: App delegate actions, document loading, session handling, and menu wiring.
+- `app/window.hpp`: Public native bridge API.
+- `app/window_internal.h`: Shared internal declarations for bridge implementation files.
+- `app/window.mm`: Native window entrypoint, WKWebView bootstrap, and runtime-cache bootstrap helpers.
+- `app/window_controls.mm`: App delegate actions, document loading, session handling, and menu wiring.
 - `web/src/app.js`: Web app source for markdown parsing, rendering, variable editing, and HTTP execution.
 - `web/styles.css`: Web app styling.
 - `build.sh`: Root build wrapper that installs local dependencies if needed, then runs the Reckon build graph.

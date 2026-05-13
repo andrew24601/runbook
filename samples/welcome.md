@@ -19,7 +19,22 @@ The JSON viewer can bind directly to cached response data.
 ```json src="profile.body"
 ```
 
+JavaScript cells can compute from any named outputs above them. This one reruns when the variables or profile response changes.
+
+```javascript name="profileSummary"
+if (typeof profile === "undefined" || !profile.body) {
+  return { userId: my_vars.user, name: "", city: "" };
+}
+
+return {
+  userId: my_vars.user,
+  name: profile.body.name,
+  city: profile.body.address.city
+};
+```
+
 Once the request runs, markdown can reflect the cached response.
 
 - Profile status: {{profile.status}}
 - Profile name: {{profile.body.name}}
+- Profile city: {{profileSummary.city}}
