@@ -1,6 +1,6 @@
 # RunBook
 
-RunBook is a native macOS HTTP workbook app. It treats Markdown files as runnable notebooks for API development: prose explains the workflow, fenced cells define variables and HTTP requests, and the app keeps execution output in a separate runtime cache so the workbook itself stays clean and committable.
+RunBook is a native macOS workbook app for API exploration and lightweight automation. It treats Markdown files as runnable notebooks: prose explains the workflow, fenced cells define variables, HTTP requests, and JavaScript transforms, and the app keeps execution output in a separate runtime cache so the workbook itself stays clean and committable.
 
 The current app bundle and binary are still named `RunDown` in the build output.
 
@@ -10,9 +10,10 @@ The current app bundle and binary are still named `RunDown` in the build output.
 - Renders ordinary Markdown alongside runnable workbook cells.
 - Supports shared variable cells with `{{variable.name}}` templating.
 - Supports Keychain-backed secret slots with per-workbook bindings.
-- Executes HTTP cells deliberately, only when the user runs them.
+- Executes HTTP cells manually or automatically when marked with `auto="true"`.
+- Runs named JavaScript cells against upstream variables, HTTP responses, and prior script output.
 - Caches HTTP responses and runtime state outside the workbook file.
-- Lets rendered Markdown and JSON cells reflect cached response data.
+- Lets rendered Markdown and JSON cells reflect cached response and JavaScript output data.
 
 RunBook is intentionally document-first: a workbook should still be readable and useful in any Markdown editor, even before anything has been executed.
 
@@ -28,9 +29,9 @@ base_url = "https://jsonplaceholder.typicode.com"
 user = "1"
 ```
 
-Fetch a profile using the shared variables above.
+Fetch a profile using the shared variables above. This request reruns automatically when its rendered inputs change.
 
-```http name="profile"
+```http name="profile" auto="true"
 GET {{env.base_url}}/users/{{env.user}}
 Accept: application/json
 ```
@@ -38,8 +39,17 @@ Accept: application/json
 ```json src="profile.body"
 ```
 
+```javascript name="summary"
+return {
+	id: env.user,
+	name: profile.body.name,
+	city: profile.body.address.city
+};
+```
+
 - Status: {{profile.status}}
-- Name: {{profile.body.name}}
+- Name: {{summary.name}}
+- City: {{summary.city}}
 ````
 
 Supported workbook fences in the current shell:
@@ -47,11 +57,39 @@ Supported workbook fences in the current shell:
 | Fence | Purpose |
 | --- | --- |
 | `variables` | Defines editable key-value values. |
-| `http` | Defines and runs an HTTP request. |
+| `http` | Defines an HTTP request that can be run manually or automatically with `auto="true"`. |
+| `javascript` | Runs JavaScript with access to named outputs from earlier cells and caches the returned value. |
 | `json` | Renders cached JSON from another cell reference. |
 | `assert` | Reserved for assertion cells. |
 
 Runtime output is not written back into the Markdown file.
+
+### Automatic HTTP Cells
+
+Named HTTP cells can opt into autorun with `auto="true"`:
+
+````markdown
+```http name="profile" auto="true"
+GET {{env.base_url}}/users/{{env.user}}
+```
+````
+
+The app compares the rendered request snapshot against the cached one and reruns the request when upstream variables, templates, or earlier computed values change.
+
+### JavaScript Cells
+
+JavaScript cells run in a worker and receive named outputs from earlier cells as parameters. Variables cells provide namespace objects, HTTP cells provide cached status/body data, and successful JavaScript cells provide their returned value to later cells and Markdown templates.
+
+````markdown
+```javascript name="summary"
+return {
+	status: profile.status,
+	city: profile.body.address.city
+};
+```
+````
+
+JavaScript cells rerun automatically when their source or upstream inputs change. Use the optional `timeout` or `timeoutMs` attribute to control the execution limit.
 
 ### Secret Slots
 

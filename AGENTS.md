@@ -74,6 +74,7 @@ Notes:
 - Do not manually edit generated files under `build/`.
 - When changing UI expansion/collapse behavior, ensure document reflow logic is updated too.
 - Keep this AGENTS.md file in sync with structural changes. When adding, removing, renaming, or meaningfully changing the role of a source file, update the Repository Layout and any affected boundary or validation guidance in the same change.
+- Keep `README.md` in sync with shipped, user-visible behavior. When feature work adds or materially changes workbook capabilities, update the README examples, feature list, and usage notes in the same change.
 - `build.mjs` discovers `web/src/*.js` for the web bundle dependencies; preserve that behavior if the web source layout changes.
 
 ## HTTP Cell Runtime Notes
