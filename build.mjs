@@ -1,14 +1,20 @@
 import { clangTree, command, executable, macOSApp, pngIcon, reckon } from "@andrew24601/reckon";
+import { readdir } from "node:fs/promises";
 
 const projectRoot = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const nativeFlags = ["-std=c++17"];
 const frameworkNames = ["Cocoa", "Foundation", "Security", "WebKit", "UniformTypeIdentifiers"];
 
 async function main() {
+  const webSourceFiles = (await readdir("web/src"))
+    .filter((file) => file.endsWith(".js"))
+    .map((file) => `web/src/${file}`)
+    .sort();
+
   const webBundle = command("npm", ["run", "build"], {
     cwd: "web",
     outputs: ["web/dist/app.bundle.js"],
-    fileDependencies: ["web/build.mjs", "web/package.json", "web/src/app.js"],
+    fileDependencies: ["web/build.mjs", "web/package.json", ...webSourceFiles],
   });
 
   const binary = executable("build/RunDown", clangTree("app", { flags: nativeFlags }), {
