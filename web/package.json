@@ -6,6 +6,8 @@
     "build": "node ./build.mjs"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "jsonpath-plus": "^10.4.0",
     "marked": "^15.0.12"
   },
   "devDependencies": {

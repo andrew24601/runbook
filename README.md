@@ -12,6 +12,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 - Supports Keychain-backed secret slots with per-workbook bindings.
 - Executes HTTP cells manually or automatically when marked with `auto="true"`.
 - Runs named JavaScript cells against upstream variables, HTTP responses, and prior script output.
+- Renders line, bar, and scatter charts from named workbook outputs with JSONPath selectors.
 - Caches HTTP responses and runtime state outside the workbook file.
 - Lets rendered Markdown and JSON cells reflect cached response and JavaScript output data.
 
@@ -43,8 +44,19 @@ Accept: application/json
 return {
 	id: env.user,
 	name: profile.body.name,
-	city: profile.body.address.city
+	city: profile.body.address.city,
+	metrics: [
+		{ label: "ID", value: Number(profile.body.id || 0) },
+		{ label: "Name length", value: profile.body.name.length }
+	]
 };
+```
+
+```chart
+type = bar
+x = $.summary.metrics[*].label
+y = $.summary.metrics[*].value
+label = Profile metrics
 ```
 
 - Status: {{profile.status}}
@@ -60,6 +72,7 @@ Supported workbook fences in the current shell:
 | `http` | Defines an HTTP request that can be run manually or automatically with `auto="true"`. |
 | `javascript` | Runs JavaScript with access to named outputs from earlier cells and caches the returned value. |
 | `json` | Renders cached JSON from another cell reference. |
+| `chart` | Renders a line, bar, or scatter chart from workbook output data selected with JSONPath. |
 | `assert` | Reserved for assertion cells. |
 
 Runtime output is not written back into the Markdown file.
@@ -91,6 +104,21 @@ return {
 
 JavaScript cells rerun automatically when their source or upstream inputs change. Use the optional `timeout` or `timeoutMs` attribute to control the execution limit.
 
+### Chart Cells
+
+Chart cells are rendered in the web app with Chart.js. Their `x` and `y` fields are JSONPath expressions where `$` is the workbook output context: variables, HTTP cells, and successful JavaScript cells are available by name. HTTP cells use the same envelope shape as JavaScript parameters: `status`, `statusText`, `body`, `rawBody`, and `request`.
+
+````markdown
+```chart
+type = line
+x = $.latency_data.body.items[*].timestamp
+y = $.latency_data.body.items[*].duration_ms
+label = Latency
+```
+````
+
+Supported chart types are `line`, `bar`, and `scatter`. Line and bar charts keep `x` values as labels; scatter charts require numeric `x` and `y` values.
+
 ### Secret Slots
 
 Global secrets are configured from the native app menu with **Secrets…**. Values are stored in macOS Keychain under user-chosen names such as `SECRET_ACCESS_KEY`; the app lists names but never displays stored values.
@@ -108,6 +136,7 @@ The rendered variable cell shows a dropdown of configured secret names. The sele
 ```text
 app/                Native Objective-C++ macOS shell and WKWebView bridge
 web/src/app.js      Workbook parsing, rendering, templating, and HTTP execution
+web/src/charts.js   Chart data extraction and Chart.js rendering
 web/styles.css      Web UI styles loaded inside the native web view
 samples/welcome.md  Bundled starter workbook
 build.mjs           Reckon build graph for the app bundle

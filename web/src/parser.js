@@ -65,7 +65,7 @@ export function parseFenceInfo(infoString) {
 }
 
 export function isWorkbookFenceLanguage(language) {
-  return language === "http" || language === "variables" || language === "assert" || language === "json" || language === "javascript";
+  return language === "http" || language === "variables" || language === "assert" || language === "json" || language === "javascript" || language === "chart";
 }
 
 export function parseWorkbookCell(token, fence, nodeIndex) {
@@ -97,6 +97,13 @@ export function parseWorkbookCell(token, fence, nodeIndex) {
     return {
       ...baseNode,
       sourceReference: fence.attributes.src || ""
+    };
+  }
+
+  if (fence.language === "chart") {
+    return {
+      ...baseNode,
+      chart: parseChartSpec(source)
     };
   }
 
@@ -161,6 +168,33 @@ function parseVariableEntries(source) {
         isSecretSlot: isSecretSentinelValue(value)
       };
     });
+}
+
+function parseChartSpec(source) {
+  const spec = {};
+  String(source || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex === -1) {
+        return;
+      }
+
+      const key = line.slice(0, separatorIndex).trim().toLowerCase();
+      const value = normalizeVariableValue(line.slice(separatorIndex + 1).trim());
+      if (key) {
+        spec[key] = value;
+      }
+    });
+
+  return {
+    type: String(spec.type || "").trim().toLowerCase(),
+    x: String(spec.x || "").trim(),
+    y: String(spec.y || "").trim(),
+    label: String(spec.label || "").trim()
+  };
 }
 
 function normalizeVariableValue(value) {

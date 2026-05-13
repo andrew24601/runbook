@@ -33,6 +33,29 @@ return {
 };
 ```
 
+JavaScript output can feed charts too.
+
+```javascript name="profileMetrics"
+if (typeof profile === "undefined" || !profile.body) {
+  return { items: [] };
+}
+
+return {
+  items: [
+    { label: "User ID", value: Number(profile.body.id || 0) },
+    { label: "Name length", value: String(profile.body.name || "").length },
+    { label: "Email length", value: String(profile.body.email || "").length }
+  ]
+};
+```
+
+```chart
+type = bar
+x = $.profileMetrics.items[*].label
+y = $.profileMetrics.items[*].value
+label = Profile metrics
+```
+
 Markdown can reflect the cached response.
 
 - Profile status: {{profile.status}}

@@ -1,5 +1,6 @@
 
 import { marked } from "marked";
+import { buildChartNodeState, destroyChartsInElement, renderChartCell } from "./charts.js";
 import {
   buildHTTPNodeState,
   buildJavascriptNodeState,
@@ -104,6 +105,10 @@ export function renderNodeDetail(node, state, callbacks, precomputedHTTPState = 
 
   if (node.cellType === "javascript") {
     return renderJavascriptCell(node, precomputedJavascriptState || buildJavascriptNodeState(node, state), state);
+  }
+
+  if (node.cellType === "chart") {
+    return renderChartCell(node, buildChartNodeState(node, state));
   }
 
   return renderCodeBlock(node.source || "");
@@ -268,7 +273,7 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
   let needsFullRender = false;
 
   appState.parsedDocument.nodes.forEach((node) => {
-    if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json" && node.cellType !== "javascript"))) {
+    if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json" && node.cellType !== "javascript" && node.cellType !== "chart"))) {
       return;
     }
 
@@ -294,6 +299,7 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
       const prose = document.createElement("div");
       prose.className = "markdown-body";
       prose.innerHTML = marked.parse(resolveTemplateStringLenient(node.rawText || "", buildTemplateContext(appState.parsedDocument.nodes, appState.runtimeState)));
+      destroyChartsInElement(article);
       article.replaceChildren(prose);
       return;
     }
@@ -306,6 +312,7 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
       }
       article.className = `document-node document-node-${sanitizeClassName(node.cellType)}`;
       article.classList.add("document-node-bloom", `document-node-${httpState.bloomState}`);
+      destroyChartsInElement(article);
       article.replaceChildren(renderHTTPCell(node, httpState, appState, callbacks));
       return;
     }
@@ -318,7 +325,14 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
       }
       article.className = `document-node document-node-${sanitizeClassName(node.cellType)}`;
       article.classList.add("document-node-bloom", `document-node-${javascriptState.bloomState}`);
+      destroyChartsInElement(article);
       article.replaceChildren(renderJavascriptCell(node, javascriptState, appState));
+      return;
+    }
+
+    destroyChartsInElement(article);
+    if (node.cellType === "chart") {
+      article.replaceChildren(renderChartCell(node, buildChartNodeState(node, appState)));
       return;
     }
 

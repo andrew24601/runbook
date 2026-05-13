@@ -1,5 +1,6 @@
 
 import { getBootstrap, normalizeRuntimeState } from "./bootstrap.js";
+import { destroyChartsInElement } from "./charts.js";
 import { createExecutionController } from "./execution.js";
 import { parseWorkbookDocument } from "./parser.js";
 import { persistRuntimeStateToHost as persistRuntimeState } from "./persistence.js";
@@ -118,6 +119,7 @@ function renderApp() {
     return;
   }
 
+  destroyChartsInElement(app);
   app.innerHTML = "";
   app.appendChild(renderDocumentFlow(appState.parsedDocument.nodes, appState, callbacks));
 }

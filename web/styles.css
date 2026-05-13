@@ -99,9 +99,29 @@ body {
 }
 
 .http-cell,
-.javascript-cell {
+.javascript-cell,
+.chart-cell {
   display: grid;
   gap: 10px;
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  min-height: 240px;
+}
+
+.chart-error {
+  margin: 0;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(176, 61, 46, 0.20);
+  background: rgba(176, 61, 46, 0.08);
+  color: var(--failure);
+  font-family: "Menlo", "SFMono-Regular", monospace;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .http-row {
@@ -200,6 +220,7 @@ body {
 .document-node-variables,
 .document-node-json,
 .document-node-javascript,
+.document-node-chart,
 .document-node-assert {
   border-radius: 8px;
   padding: 12px;
@@ -417,7 +438,13 @@ body {
   .document-node-variables,
   .document-node-json,
   .document-node-javascript,
+  .document-node-chart,
   .document-node-assert {
     padding: 12px;
+  }
+
+  .chart-canvas-wrap {
+    height: 260px;
+    min-height: 220px;
   }
 }
