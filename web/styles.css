@@ -135,6 +135,51 @@ body {
   line-height: 1.5;
 }
 
+.render-error {
+  display: grid;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 14px;
+  border: 1px solid rgba(176, 61, 46, 0.24);
+  background: rgba(176, 61, 46, 0.08);
+  color: var(--failure);
+}
+
+.render-error-title,
+.render-error-meta {
+  margin: 0;
+}
+
+.render-error-title {
+  font-weight: 700;
+}
+
+.render-error-meta {
+  color: var(--muted);
+  font-family: "Menlo", "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.render-error-detail {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.72);
+  color: var(--failure);
+  font-family: "Menlo", "SFMono-Regular", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.render-error-source summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .http-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;

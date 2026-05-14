@@ -10,7 +10,7 @@ const bootstrap = getBootstrap();
 
 const appState = {
   runtimeState: normalizeRuntimeState(bootstrap.runtimeState),
-  parsedDocument: parseWorkbookDocument(bootstrap.document && bootstrap.document.source ? bootstrap.document.source : ""),
+  parsedDocument: parseDocumentSourceSafely(bootstrap.document && bootstrap.document.source ? bootstrap.document.source : ""),
   inflightRequests: new Set(),
   inflightScripts: new Set(),
   expandedHTTPCells: new Set(),
@@ -76,7 +76,7 @@ window.RunDown = {
       bootstrap.document = { sourceLabel: "", source: "" };
     }
     bootstrap.document.source = nextSource;
-    appState.parsedDocument = parseWorkbookDocument(nextSource);
+    appState.parsedDocument = parseDocumentSourceSafely(nextSource);
     appState.pendingHTTPStartIndex = Infinity;
     appState.pendingJavascriptStartIndex = Infinity;
     renderApp();
@@ -133,9 +133,17 @@ function renderApp() {
     return;
   }
 
-  destroyChartsInElement(app);
-  app.innerHTML = "";
-  app.appendChild(renderDocumentFlow(appState.parsedDocument.nodes, appState, callbacks));
+  const focusSnapshot = captureVariableControlFocus(app);
+  try {
+    const nextRender = renderDocumentFlow(appState.parsedDocument.nodes, appState, callbacks);
+    destroyChartsInElement(app);
+    app.replaceChildren(nextRender);
+    restoreVariableControlFocus(app, focusSnapshot);
+  } catch (error) {
+    console.error("RunDown render failed", error);
+    destroyChartsInElement(app);
+    app.replaceChildren(renderApplicationError(error));
+  }
 }
 
 function persistRuntimeStateToHost() {
@@ -144,4 +152,107 @@ function persistRuntimeStateToHost() {
 
 function refreshTemplateDrivenNodes() {
   refreshRenderedTemplateNodes(appState, app, callbacks);
+}
+
+function captureVariableControlFocus(appElement) {
+  const activeElement = document.activeElement;
+  if (!activeElement || !appElement.contains(activeElement) || !activeElement.dataset) {
+    return null;
+  }
+
+  const { variableNamespace, variableKey, variableControl } = activeElement.dataset;
+  if (!variableNamespace || !variableKey || !variableControl) {
+    return null;
+  }
+
+  const snapshot = {
+    variableNamespace,
+    variableKey,
+    variableControl,
+    selectionStart: null,
+    selectionEnd: null,
+    selectionDirection: "none"
+  };
+
+  if (canRestoreTextSelection(activeElement)) {
+    snapshot.selectionStart = activeElement.selectionStart;
+    snapshot.selectionEnd = activeElement.selectionEnd;
+    snapshot.selectionDirection = activeElement.selectionDirection || "none";
+  }
+
+  return snapshot;
+}
+
+function restoreVariableControlFocus(appElement, snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  const control = Array.from(appElement.querySelectorAll("[data-variable-namespace][data-variable-key][data-variable-control]")).find((candidate) => (
+    candidate.dataset.variableNamespace === snapshot.variableNamespace &&
+    candidate.dataset.variableKey === snapshot.variableKey &&
+    candidate.dataset.variableControl === snapshot.variableControl
+  ));
+  if (!control) {
+    return;
+  }
+
+  try {
+    control.focus({ preventScroll: true });
+  } catch {
+    control.focus();
+  }
+
+  if (snapshot.selectionStart === null || !canRestoreTextSelection(control)) {
+    return;
+  }
+
+  const valueLength = control.value.length;
+  const selectionStart = Math.min(snapshot.selectionStart, valueLength);
+  const selectionEnd = Math.min(snapshot.selectionEnd ?? selectionStart, valueLength);
+  control.setSelectionRange(selectionStart, selectionEnd, snapshot.selectionDirection);
+}
+
+function canRestoreTextSelection(element) {
+  return element instanceof HTMLInputElement && element.type === "text";
+}
+
+function parseDocumentSourceSafely(source) {
+  try {
+    return parseWorkbookDocument(source);
+  } catch (error) {
+    console.error("RunDown document parse failed", error);
+    return {
+      nodes: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function renderApplicationError(error) {
+  const wrap = document.createElement("main");
+  wrap.className = "document-flow";
+
+  const article = document.createElement("article");
+  article.className = "document-node render-error";
+
+  const title = document.createElement("p");
+  title.className = "render-error-title";
+  title.textContent = "RunDown could not render this workbook.";
+  article.appendChild(title);
+
+  const detail = document.createElement("pre");
+  detail.className = "render-error-detail";
+  detail.textContent = formatErrorForDisplay(error);
+  article.appendChild(detail);
+
+  wrap.appendChild(article);
+  return wrap;
+}
+
+function formatErrorForDisplay(error) {
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+  return String(error);
 }

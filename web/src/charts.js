@@ -126,12 +126,19 @@ export function renderChartCell(node, chartState) {
       return;
     }
 
-    destroyChartForCanvas(canvas);
-    new Chart(canvas, {
-      type: chartState.type,
-      data: chartState.data,
-      options: buildChartOptions(chartState.type)
-    });
+    try {
+      destroyChartForCanvas(canvas);
+      new Chart(canvas, {
+        type: chartState.type,
+        data: chartState.data,
+        options: buildChartOptions(chartState.type)
+      });
+    } catch (error) {
+      console.error("RunDown chart render failed", error);
+      if (canvasWrap.isConnected) {
+        canvasWrap.replaceWith(renderChartError(error));
+      }
+    }
   });
 
   return wrap;
@@ -194,6 +201,14 @@ function buildChartError(error) {
     status: "failure",
     error
   };
+}
+
+function renderChartError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const wrap = document.createElement("div");
+  wrap.className = "chart-error";
+  wrap.textContent = message || "Chart could not be rendered.";
+  return wrap;
 }
 
 function buildChartOptions(type) {
