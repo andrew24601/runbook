@@ -6,7 +6,7 @@ import {
   resolveTemplateStringLenient,
   resolveTemplateStringStrict
 } from "./templates.js";
-import { getSecretBinding } from "./variables.js";
+import { getSecretBinding, getVariableValue } from "./variables.js";
 import { isValidJavascriptIdentifier, stableStringify } from "./utils.js";
 
 export function buildHTTPNodeState(node, state) {
@@ -190,13 +190,13 @@ export function buildVariablesOutput(node, runtimeState) {
       namespaceValues[entry.key] = getSecretBinding(runtimeState, node.name, entry.key) ? "*****" : "";
       return;
     }
-    namespaceValues[entry.key] = entry.value;
+    namespaceValues[entry.key] = getVariableValue(runtimeState, node.name, entry.key, entry.value, entry);
   });
 
   Object.entries(runtimeState.variables && runtimeState.variables[node.name] ? runtimeState.variables[node.name] : {}).forEach(([key, value]) => {
     const entry = (node.variables || []).find((candidate) => candidate.key === key);
     if (!entry || !entry.isSecretSlot) {
-      namespaceValues[key] = value;
+      namespaceValues[key] = getVariableValue(runtimeState, node.name, key, value, entry);
     }
   });
 

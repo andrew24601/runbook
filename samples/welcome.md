@@ -5,6 +5,12 @@ This workbook exists so the first native RunDown shell has something concrete to
 ```variables name="my_vars"
 base_url = "https://jsonplaceholder.typicode.com"
 user = "1"
+limit = 20
+include_archived = false
+status = {
+  "type": "select",
+  "options": ["all", "success", "failed"]
+}
 ```
 
 The profile request uses the shared base URL and user variables, and runs automatically when those inputs change.
@@ -29,7 +35,10 @@ if (typeof profile === "undefined" || !profile.body) {
 return {
   userId: my_vars.user,
   name: profile.body.name,
-  city: profile.body.address.city
+  city: profile.body.address.city,
+  limit: my_vars.limit,
+  includeArchived: my_vars.include_archived,
+  status: my_vars.status
 };
 ```
 

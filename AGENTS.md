@@ -41,6 +41,7 @@ Data flow:
 - `web/src/variables.js`: Variable and secret-binding runtime mutations.
 - `web/src/persistence.js`: Runtime cache payload construction and sanitization.
 - `web/src/utils.js`: Shared small pure helpers.
+- `web/scripts/validate-typed-variables.mjs`: Lightweight parser validation for typed variable cells.
 - `web/styles.css`: Web app styling.
 - `package.json`: Root npm scripts; `npm run build` runs `build.mjs`.
 - `samples/welcome.md`: Bundled sample workbook.
@@ -61,8 +62,9 @@ From repository root:
 ## Validation Workflow
 Use this sequence for routine maintenance:
 
-1. `npm run build`
-2. Launch app (`open -n build/RunDown.app`) for UI/runtime sanity.
+1. `npm run test:variables`
+2. `npm run build`
+3. Launch app (`open -n build/RunDown.app`) for UI/runtime sanity.
 
 Notes:
 - Prefer the Reckon app build plus runtime sanity checks for feature work.

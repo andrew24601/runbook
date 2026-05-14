@@ -2,6 +2,7 @@
   "scripts": {
     "clean": "rm -rf build",
     "build": "node build.mjs",
+    "test:variables": "node web/scripts/validate-typed-variables.mjs",
     "app": "node build.mjs && open -n build/RunDown.app"
   },
   "dependencies": {

@@ -150,24 +150,121 @@ function parseHTTPCell(source) {
   };
 }
 
-function parseVariableEntries(source) {
-  return String(source || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separatorIndex = line.indexOf("=");
-      if (separatorIndex === -1) {
-        return { key: line, value: "", isSecretSlot: false };
-      }
+const VARIABLE_DECLARATION_PATTERN = /^([A-Za-z_$][0-9A-Za-z_$]*)\s*=\s*/;
 
-      const value = normalizeVariableValue(line.slice(separatorIndex + 1).trim());
-      return {
-        key: line.slice(0, separatorIndex).trim(),
-        value,
-        isSecretSlot: isSecretSentinelValue(value)
+export function parseVariableEntries(source) {
+  const entries = [];
+  let currentEntry = null;
+
+  const flushEntry = () => {
+    if (!currentEntry) {
+      return;
+    }
+
+    entries.push(parseVariableEntry(currentEntry.key, currentEntry.valueLines.join("\n")));
+    currentEntry = null;
+  };
+
+  String(source || "").replace(/\r\n/g, "\n").split("\n").forEach((line) => {
+    const match = line.match(VARIABLE_DECLARATION_PATTERN);
+    if (match) {
+      flushEntry();
+      currentEntry = {
+        key: match[1],
+        valueLines: [line.slice(match[0].length)]
       };
-    });
+      return;
+    }
+
+    if (currentEntry) {
+      currentEntry.valueLines.push(line);
+    }
+  });
+
+  flushEntry();
+  return entries;
+}
+
+function parseVariableEntry(key, rawValue) {
+  const value = parseVariableValue(rawValue);
+  return {
+    key,
+    value: value.value,
+    valueType: value.valueType,
+    ...(value.control ? { control: value.control } : {}),
+    isSecretSlot: value.valueType === "secret"
+  };
+}
+
+function parseVariableValue(rawValue) {
+  const trimmed = String(rawValue || "").trim();
+
+  if (isSecretSentinelValue(trimmed)) {
+    return { value: "<secret>", valueType: "secret" };
+  }
+
+  if (isQuotedVariableValue(trimmed)) {
+    return { value: trimmed.slice(1, -1), valueType: "string" };
+  }
+
+  if (/^(?:true|false)$/.test(trimmed)) {
+    return { value: trimmed === "true", valueType: "boolean" };
+  }
+
+  if (isNumberLiteral(trimmed)) {
+    return { value: Number(trimmed), valueType: "number" };
+  }
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const definition = JSON.parse(trimmed);
+      const controlValue = parseVariableControlDefinition(definition);
+      if (controlValue) {
+        return controlValue;
+      }
+    } catch {
+      // Invalid JSON definitions fall through to a plain string value.
+    }
+  }
+
+  return { value: trimmed, valueType: "string" };
+}
+
+function parseVariableControlDefinition(definition) {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+    return null;
+  }
+
+  if (String(definition.type || "").toLowerCase() !== "select" || !Array.isArray(definition.options)) {
+    return null;
+  }
+
+  const options = definition.options.filter((option) => isSelectOptionValue(option));
+  const value = Object.prototype.hasOwnProperty.call(definition, "value") && isSelectOptionValue(definition.value)
+    ? definition.value
+    : options.length ? options[0] : "";
+
+  return {
+    value,
+    valueType: "control",
+    control: {
+      type: "select",
+      options
+    }
+  };
+}
+
+function isQuotedVariableValue(value) {
+  return value.length >= 2
+    && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")));
+}
+
+function isNumberLiteral(value) {
+  return /^[+-]?(?:(?:\d+\.\d*)|(?:\d+)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value) && Number.isFinite(Number(value));
+}
+
+function isSelectOptionValue(value) {
+  return value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
 function parseChartSpec(source) {

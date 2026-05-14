@@ -1,5 +1,5 @@
 
-import { getSecretBinding } from "./variables.js";
+import { getSecretBinding, getVariableValue } from "./variables.js";
 
 export function buildTemplateContext(nodes, runtimeState, options = {}) {
   const variablesByNamespace = {};
@@ -24,7 +24,7 @@ export function buildTemplateContext(nodes, runtimeState, options = {}) {
           };
           return;
         }
-        namespaceValues[entry.key] = entry.value;
+        namespaceValues[entry.key] = getVariableValue(runtimeState, node.name, entry.key, entry.value, entry);
       });
       variablesByNamespace[node.name] = namespaceValues;
     }
@@ -32,9 +32,15 @@ export function buildTemplateContext(nodes, runtimeState, options = {}) {
 
   Object.entries(runtimeState.variables || {}).forEach(([namespaceName, values]) => {
     const secretSlots = secretSlotsByNamespace[namespaceName] || {};
+    const variableNode = nodes.find((node) => node.kind === "cell" && node.cellType === "variables" && node.name === namespaceName);
     variablesByNamespace[namespaceName] = {
       ...(variablesByNamespace[namespaceName] || {}),
-      ...Object.fromEntries(Object.entries(values || {}).filter(([key]) => !Object.prototype.hasOwnProperty.call(secretSlots, key)))
+      ...Object.fromEntries(Object.entries(values || {}).filter(([key]) => !Object.prototype.hasOwnProperty.call(secretSlots, key)).map(([key, value]) => {
+        const entry = variableNode && Array.isArray(variableNode.variables)
+          ? variableNode.variables.find((candidate) => candidate.key === key)
+          : null;
+        return [key, getVariableValue(runtimeState, namespaceName, key, value, entry)];
+      }))
     };
   });
 

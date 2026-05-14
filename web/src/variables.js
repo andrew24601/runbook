@@ -3,13 +3,13 @@ export function getHTTPExpansionKey(node) {
   return node.name || `http-${node.nodeIndex}`;
 }
 
-export function getVariableValue(runtimeState, namespaceName, key, fallbackValue) {
+export function getVariableValue(runtimeState, namespaceName, key, fallbackValue, entry = null) {
   const namespaceValues = runtimeState.variables && runtimeState.variables[namespaceName] ? runtimeState.variables[namespaceName] : null;
   if (namespaceValues && Object.prototype.hasOwnProperty.call(namespaceValues, key)) {
-    return namespaceValues[key];
+    return coerceVariableValueForEntry(entry, namespaceValues[key]);
   }
 
-  return fallbackValue || "";
+  return coerceVariableValueForEntry(entry, fallbackValue);
 }
 
 export function setVariableValue(runtimeState, namespaceName, key, value, defaultValue) {
@@ -17,11 +17,15 @@ export function setVariableValue(runtimeState, namespaceName, key, value, defaul
     return;
   }
 
-  const nextValue = String(value || "");
-  const fallbackValue = String(defaultValue || "");
+  if (!runtimeState.variables) {
+    runtimeState.variables = {};
+  }
+
+  const nextValue = normalizePersistedVariableValue(value);
+  const fallbackValue = normalizePersistedVariableValue(defaultValue);
   const namespaceValues = runtimeState.variables[namespaceName] ? { ...runtimeState.variables[namespaceName] } : {};
 
-  if (nextValue === fallbackValue) {
+  if (variableValuesEqual(nextValue, fallbackValue)) {
     delete namespaceValues[key];
   } else {
     namespaceValues[key] = nextValue;
@@ -32,6 +36,93 @@ export function setVariableValue(runtimeState, namespaceName, key, value, defaul
   } else {
     runtimeState.variables[namespaceName] = namespaceValues;
   }
+}
+
+export function coerceVariableValueForEntry(entry, value) {
+  if (!entry) {
+    return value ?? "";
+  }
+
+  if (entry.valueType === "number") {
+    if (value === "") {
+      return "";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const numberValue = Number(value);
+      if (Number.isFinite(numberValue)) {
+        return numberValue;
+      }
+    }
+    return entry.value;
+  }
+
+  if (entry.valueType === "boolean") {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "string") {
+      if (value === "true") {
+        return true;
+      }
+      if (value === "false") {
+        return false;
+      }
+    }
+    return entry.value;
+  }
+
+  if (entry.valueType === "control" && entry.control && entry.control.type === "select") {
+    return normalizeSelectValue(entry, value);
+  }
+
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return String(value);
+}
+
+function normalizeSelectValue(entry, value) {
+  const options = Array.isArray(entry.control && entry.control.options) ? entry.control.options : [];
+  const exactMatch = options.find((option) => Object.is(option, value));
+  if (exactMatch !== undefined) {
+    return exactMatch;
+  }
+
+  const stringMatch = options.find((option) => String(option) === String(value));
+  if (stringMatch !== undefined) {
+    return stringMatch;
+  }
+
+  if (value != null) {
+    return value;
+  }
+  if (entry.value != null) {
+    return entry.value;
+  }
+  return options.length ? options[0] : "";
+}
+
+function normalizePersistedVariableValue(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : "";
+  }
+  if (typeof value === "boolean" || typeof value === "string") {
+    return value;
+  }
+  if (value == null) {
+    return "";
+  }
+  return String(value);
+}
+
+function variableValuesEqual(left, right) {
+  return Object.is(left, right);
 }
 
 export function getSecretBinding(runtimeState, namespaceName, key) {

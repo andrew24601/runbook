@@ -8,7 +8,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 
 - Opens Markdown workbooks in a native macOS window.
 - Renders ordinary Markdown alongside runnable workbook cells.
-- Supports shared variable cells with `{{variable.name}}` templating.
+- Supports shared variable cells with typed text, number, checkbox, select, and secret controls.
 - Supports Keychain-backed secret slots with per-workbook bindings.
 - Executes HTTP cells manually or automatically when marked with `auto="true"`.
 - Runs named JavaScript cells against upstream variables, HTTP responses, and prior script output.
@@ -28,6 +28,12 @@ Workbooks are plain Markdown files. Executable cells are fenced code blocks.
 ```variables name="env"
 base_url = "https://jsonplaceholder.typicode.com"
 user = "1"
+limit = 20
+include_archived = false
+status = {
+  "type": "select",
+  "options": ["all", "success", "failed"]
+}
 ```
 
 Fetch a profile using the shared variables above. This request reruns automatically when its rendered inputs change.
@@ -76,6 +82,32 @@ Supported workbook fences in the current shell:
 | `assert` | Reserved for assertion cells. |
 
 Runtime output is not written back into the Markdown file.
+
+### Variable Cells
+
+Variable cells expose editable values under their cell name, such as `{{env.user}}` in Markdown and HTTP cells, or `env.user` in JavaScript cells. Quoted values stay strings, unquoted numbers become number inputs, and unquoted `true`/`false` values become checkboxes:
+
+````markdown
+```variables name="filters"
+base_url = "https://jsonplaceholder.typicode.com"
+user = "1"
+limit = 20
+include_archived = false
+```
+````
+
+Advanced controls can use JSON-style definitions. A select control accepts `type`, `options`, and an optional `value`; when `value` is omitted, the first option is selected by default.
+
+````markdown
+```variables name="filters"
+status = {
+  "type": "select",
+  "options": ["all", "success", "failed"]
+}
+```
+````
+
+Variable definitions start at the beginning of a line with `identifier =`, so multi-line JSON definitions continue until the next variable declaration or the end of the cell. Numbers and booleans are preserved as typed values in JavaScript cells and chart contexts; templates stringify them when rendering text.
 
 ### Automatic HTTP Cells
 

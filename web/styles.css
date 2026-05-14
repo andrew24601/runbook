@@ -98,6 +98,17 @@ body {
   box-shadow: 0 0 0 3px rgba(46, 124, 79, 0.12);
 }
 
+.variable-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--success);
+}
+
+.variable-checkbox:focus {
+  outline: 2px solid rgba(46, 124, 79, 0.32);
+  outline-offset: 3px;
+}
+
 .http-cell,
 .javascript-cell,
 .chart-cell {

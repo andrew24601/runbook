@@ -206,28 +206,116 @@ export function renderVariablesEditor(node, state, callbacks) {
       return;
     }
 
-    const input = document.createElement("input");
-    input.className = "variable-input";
-    input.type = "text";
-    input.autocomplete = "off";
-    input.spellcheck = false;
-    input.value = getVariableValue(state.runtimeState, node.name, entry.key, entry.value);
-    input.placeholder = entry.value || "";
-    input.addEventListener("input", () => {
-      setVariableValue(state.runtimeState, node.name, entry.key, input.value, entry.value);
-      callbacks.persistRuntimeStateToHost();
-      callbacks.refreshTemplateDrivenNodes();
-      callbacks.scheduleAutoHTTPExecutionFromIndex(node.nodeIndex + 1);
-    });
-    input.addEventListener("change", () => {
-      callbacks.persistRuntimeStateToHost();
-    });
-    row.appendChild(input);
+    row.appendChild(renderVariableControl(node.name, entry, state, node.nodeIndex, callbacks));
 
     editor.appendChild(row);
   });
 
   return editor;
+}
+
+function renderVariableControl(namespaceName, entry, state, nodeIndex, callbacks) {
+  if (entry.valueType === "boolean") {
+    return renderBooleanVariableInput(namespaceName, entry, state, nodeIndex, callbacks);
+  }
+
+  if (entry.valueType === "number") {
+    return renderNumberVariableInput(namespaceName, entry, state, nodeIndex, callbacks);
+  }
+
+  if (entry.valueType === "control" && entry.control && entry.control.type === "select") {
+    return renderSelectVariableInput(namespaceName, entry, state, nodeIndex, callbacks);
+  }
+
+  return renderTextVariableInput(namespaceName, entry, state, nodeIndex, callbacks);
+}
+
+function renderTextVariableInput(namespaceName, entry, state, nodeIndex, callbacks) {
+  const input = document.createElement("input");
+  input.className = "variable-input";
+  input.type = "text";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.value = getVariableValue(state.runtimeState, namespaceName, entry.key, entry.value, entry);
+  input.placeholder = entry.value || "";
+  input.addEventListener("input", () => {
+    commitVariableValue(state, namespaceName, entry, input.value, nodeIndex, callbacks);
+  });
+  input.addEventListener("change", () => {
+    callbacks.persistRuntimeStateToHost();
+  });
+  return input;
+}
+
+function renderNumberVariableInput(namespaceName, entry, state, nodeIndex, callbacks) {
+  const input = document.createElement("input");
+  input.className = "variable-input";
+  input.type = "number";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.value = String(getVariableValue(state.runtimeState, namespaceName, entry.key, entry.value, entry));
+  input.placeholder = String(entry.value ?? "");
+  input.addEventListener("input", () => {
+    const nextValue = input.value === "" ? "" : Number(input.value);
+    commitVariableValue(state, namespaceName, entry, Number.isFinite(nextValue) || nextValue === "" ? nextValue : entry.value, nodeIndex, callbacks);
+  });
+  input.addEventListener("change", () => {
+    callbacks.persistRuntimeStateToHost();
+  });
+  return input;
+}
+
+function renderBooleanVariableInput(namespaceName, entry, state, nodeIndex, callbacks) {
+  const input = document.createElement("input");
+  input.className = "variable-checkbox";
+  input.type = "checkbox";
+  input.checked = Boolean(getVariableValue(state.runtimeState, namespaceName, entry.key, entry.value, entry));
+  input.addEventListener("change", () => {
+    commitVariableValue(state, namespaceName, entry, input.checked, nodeIndex, callbacks);
+  });
+  return input;
+}
+
+function renderSelectVariableInput(namespaceName, entry, state, nodeIndex, callbacks) {
+  const select = document.createElement("select");
+  select.className = "variable-input";
+  const options = Array.isArray(entry.control.options) ? entry.control.options : [];
+  const currentValue = getVariableValue(state.runtimeState, namespaceName, entry.key, entry.value, entry);
+  let selectedIndex = options.findIndex((option) => Object.is(option, currentValue));
+  if (selectedIndex === -1) {
+    selectedIndex = options.findIndex((option) => String(option) === String(currentValue));
+  }
+
+  const optionValues = [...options];
+  if (selectedIndex === -1 && currentValue !== "") {
+    selectedIndex = optionValues.length;
+    optionValues.push(currentValue);
+  }
+
+  optionValues.forEach((optionValue, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = String(optionValue);
+    if (index >= options.length) {
+      option.textContent = `${option.textContent} (missing)`;
+    }
+    select.appendChild(option);
+  });
+
+  select.value = selectedIndex === -1 ? "" : String(selectedIndex);
+  select.addEventListener("change", () => {
+    const index = Number.parseInt(select.value, 10);
+    const nextValue = index >= 0 && index < optionValues.length ? optionValues[index] : entry.value;
+    commitVariableValue(state, namespaceName, entry, nextValue, nodeIndex, callbacks);
+  });
+  return select;
+}
+
+function commitVariableValue(state, namespaceName, entry, value, nodeIndex, callbacks) {
+  setVariableValue(state.runtimeState, namespaceName, entry.key, value, entry.value);
+  callbacks.persistRuntimeStateToHost();
+  callbacks.refreshTemplateDrivenNodes();
+  callbacks.scheduleAutoHTTPExecutionFromIndex(nodeIndex + 1);
 }
 
 export function renderSecretBindingSelect(namespaceName, entry, state, nodeIndex, callbacks) {
