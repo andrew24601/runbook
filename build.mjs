@@ -6,15 +6,10 @@ const nativeFlags = ["-std=c++17"];
 const frameworkNames = ["Cocoa", "Foundation", "Security", "WebKit", "UniformTypeIdentifiers"];
 
 async function main() {
-  const webSourceFiles = (await readdir("web/src"))
-    .filter((file) => file.endsWith(".js"))
-    .map((file) => `web/src/${file}`)
-    .sort();
-
   const webBundle = command("npm", ["run", "build"], {
     cwd: "web",
     outputs: ["web/dist/app.bundle.js"],
-    fileDependencies: ["web/build.mjs", "web/package.json", ...webSourceFiles],
+    fileDependencies: ["web/build.mjs", "web/package.json", "web/src/*.js"],
   });
 
   const binary = executable("build/RunDown", clangTree("app", { flags: nativeFlags }), {
