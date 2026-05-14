@@ -7,6 +7,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 ## What It Does
 
 - Opens Markdown workbooks in a native macOS window.
+- Live reloads open workbook windows when their Markdown files change on disk.
 - Renders ordinary Markdown alongside runnable workbook cells.
 - Supports shared variable cells with typed text, number, checkbox, select, and secret controls.
 - Supports Keychain-backed secret slots with per-workbook bindings.

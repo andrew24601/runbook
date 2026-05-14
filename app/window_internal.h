@@ -50,6 +50,8 @@ NSArray<NSString*>* RunDownSecretNames(void);
 NSDictionary<NSString*, NSString*>* RunDownResolveSecrets(NSArray<NSString*>* secretNames);
 void RunDownPresentSecretsPanel(NSWindow* parentWindow);
 void RunDownToggleHiddenRuntimeCells(NSWindow* window);
+void RunDownStartWorkbookFileReloading(NSWindow* window, NSString* sourceLabel, NSString* initialSource);
+void RunDownStopWorkbookFileReloading(NSWindow* window);
 NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<WorkbookDocumentSource> content, NSString** errorText);
 NSMenu* BuildApplicationMenu(NSString* appName);
 

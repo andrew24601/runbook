@@ -69,6 +69,20 @@ window.RunDown = {
     appState.showHiddenRuntimeCells = !appState.showHiddenRuntimeCells;
     renderApp();
     return appState.showHiddenRuntimeCells;
+  },
+  reloadDocumentSource(source) {
+    const nextSource = typeof source === "string" ? source : "";
+    if (!bootstrap.document) {
+      bootstrap.document = { sourceLabel: "", source: "" };
+    }
+    bootstrap.document.source = nextSource;
+    appState.parsedDocument = parseWorkbookDocument(nextSource);
+    appState.pendingHTTPStartIndex = Infinity;
+    appState.pendingJavascriptStartIndex = Infinity;
+    renderApp();
+    execution.scheduleAutoHTTPExecutionFromIndex(0, { delayMs: 0 });
+    execution.scheduleJavascriptExecutionFromIndex(0);
+    return true;
   }
 };
 

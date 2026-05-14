@@ -4,7 +4,7 @@ This workbook exists so the first native RunDown shell has something concrete to
 
 ```variables name="my_vars"
 base_url = "https://jsonplaceholder.typicode.com"
-user = "1"
+user = 1
 limit = 20
 include_archived = false
 status = {

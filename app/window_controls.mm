@@ -325,6 +325,7 @@ static void PresentWorkbookOpenError(NSString* workbookPath, NSString* detailTex
     }
 
     NSWindow* window = (NSWindow*)[notification object];
+    RunDownStopWorkbookFileReloading(window);
     PersistStoredWorkbookSessionPaths(OpenWorkbookSessionPaths(window, YES));
 }
 

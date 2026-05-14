@@ -6,6 +6,7 @@
 
 #import <CommonCrypto/CommonDigest.h>
 #import <WebKit/WebKit.h>
+#import <objc/runtime.h>
 
 @interface DoofBookWebShellMessageBridge : NSObject <WKScriptMessageHandler, WKScriptMessageHandlerWithReply>
 @end
@@ -304,6 +305,132 @@ WKWebView* BuildWorkbookWebView(
 
 } // namespace
 
+static WKWebView* FindWorkbookWebView(NSView* view);
+
+@interface RunDownWorkbookFileReloader : NSObject {
+    NSString* _workbookPath;
+    WKWebView* _webView;
+    NSTimer* _timer;
+    NSString* _lastAppliedSource;
+    BOOL _reloadInFlight;
+}
+
+- (instancetype)initWithWorkbookPath:(NSString*)workbookPath webView:(WKWebView*)webView initialSource:(NSString*)initialSource;
+- (void)start;
+- (void)stop;
+
+@end
+
+@implementation RunDownWorkbookFileReloader
+
+- (instancetype)initWithWorkbookPath:(NSString*)workbookPath webView:(WKWebView*)webView initialSource:(NSString*)initialSource {
+    self = [super init];
+    if (self != nil) {
+        _workbookPath = [TrimString(workbookPath ?: @"") copy];
+        _webView = webView;
+        _lastAppliedSource = [(initialSource ?: @"") copy];
+        _reloadInFlight = NO;
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [self stop];
+    [_workbookPath release];
+    [_lastAppliedSource release];
+    [super dealloc];
+}
+
+- (void)start {
+    if (_timer != nil || [_workbookPath length] == 0 || _webView == nil) {
+        return;
+    }
+
+    _timer = [[NSTimer timerWithTimeInterval:1.0
+                                      target:self
+                                    selector:@selector(checkForWorkbookChanges:)
+                                    userInfo:nil
+                                     repeats:YES] retain];
+    [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
+}
+
+- (void)stop {
+    if (_timer != nil) {
+        [_timer invalidate];
+        [_timer release];
+        _timer = nil;
+    }
+    _webView = nil;
+    _reloadInFlight = NO;
+}
+
+- (void)checkForWorkbookChanges:(NSTimer*)timer {
+    (void)timer;
+    if (_reloadInFlight || _webView == nil || [_workbookPath length] == 0) {
+        return;
+    }
+
+    NSError* readError = nil;
+    NSString* sourceText = [NSString stringWithContentsOfFile:_workbookPath encoding:NSUTF8StringEncoding error:&readError];
+    if (sourceText == nil || readError != nil || [_lastAppliedSource isEqualToString:sourceText]) {
+        return;
+    }
+
+    NSString* payloadJSON = JSONStringFromObject(@{ @"source": sourceText });
+    if ([payloadJSON length] == 0) {
+        return;
+    }
+
+    _reloadInFlight = YES;
+    NSString* script = [NSString stringWithFormat:
+        @"(() => {"
+        "  if (!window.RunDown || typeof window.RunDown.reloadDocumentSource !== 'function') {"
+        "    throw new Error('RunDown reload API is unavailable');"
+        "  }"
+        "  return window.RunDown.reloadDocumentSource((%@).source);"
+        "})();",
+        payloadJSON
+    ];
+
+    [sourceText retain];
+    [self retain];
+    [_webView evaluateJavaScript:script completionHandler:^(id result, NSError* error) {
+        (void)result;
+        if (error == nil) {
+            [_lastAppliedSource release];
+            _lastAppliedSource = [sourceText copy];
+        }
+        [sourceText release];
+        _reloadInFlight = NO;
+        [self release];
+    }];
+}
+
+@end
+
+static char kRunDownWorkbookFileReloaderKey;
+
+void RunDownStartWorkbookFileReloading(NSWindow* window, NSString* sourceLabel, NSString* initialSource) {
+    NSString* workbookPath = ResolvedWorkbookFilePath(sourceLabel);
+    WKWebView* webView = FindWorkbookWebView(window != nil ? [window contentView] : nil);
+    if ([workbookPath length] == 0 || webView == nil) {
+        return;
+    }
+
+    RunDownWorkbookFileReloader* reloader = [[RunDownWorkbookFileReloader alloc] initWithWorkbookPath:workbookPath
+                                                                                              webView:webView
+                                                                                       initialSource:initialSource ?: @""];
+    [reloader start];
+    objc_setAssociatedObject(window, &kRunDownWorkbookFileReloaderKey, reloader, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [reloader release];
+}
+
+void RunDownStopWorkbookFileReloading(NSWindow* window) {
+    RunDownWorkbookFileReloader* reloader = (RunDownWorkbookFileReloader*)objc_getAssociatedObject(window, &kRunDownWorkbookFileReloaderKey);
+    [reloader stop];
+    objc_setAssociatedObject(window, &kRunDownWorkbookFileReloaderKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 NSString* ResolvedWorkbookFilePath(NSString* sourceLabel) {
     NSString* trimmedSourceLabel = TrimString(sourceLabel);
     if ([trimmedSourceLabel length] == 0) {
@@ -449,6 +576,7 @@ NSWindow* CreateWorkbookDocumentWindow(NSString* windowTitle, std::shared_ptr<Wo
     [[window contentView] addSubview:webView];
     [[window contentView] setWantsLayer:YES];
     [[[window contentView] layer] setBackgroundColor:[WindowBackgroundColor() CGColor]];
+    RunDownStartWorkbookFileReloading(window, sourceLabel, NSStringFromStdString(content->source));
     [window makeKeyAndOrderFront:nil];
 
     return [window autorelease];
