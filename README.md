@@ -9,7 +9,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 - Opens Markdown workbooks in a native macOS window.
 - Live reloads open workbook windows when their Markdown files change on disk.
 - Renders ordinary Markdown alongside runnable workbook cells.
-- Supports shared variable cells with typed text, number, checkbox, select, and secret controls.
+- Supports shared variable cells with typed text, number, checkbox, static select, data-bound select, and secret controls.
 - Supports Keychain-backed secret slots with per-workbook bindings.
 - Executes HTTP cells manually or automatically when marked with `auto="true"`.
 - Runs named JavaScript cells against upstream variables, HTTP responses, and prior script output.
@@ -97,16 +97,33 @@ include_archived = false
 ```
 ````
 
-Advanced controls can use JSON-style definitions. A select control accepts `type`, `options`, and an optional `value`; when `value` is omitted, the first option is selected by default.
+Advanced controls can use JSON-style definitions. A static select control accepts `type`, array `options`, and an optional `default`; when `default` is omitted, the first option is selected by default.
 
 ````markdown
 ```variables name="filters"
 status = {
   "type": "select",
-  "options": ["all", "success", "failed"]
+  "options": ["all", "success", "failed"],
+  "default": "success"
 }
 ```
 ````
+
+Data-bound selects use a JSONPath string for `options`. The path resolves against the same workbook output root used by charts: variables, HTTP outputs, and successful JavaScript outputs are all available by name. For object results, `label` chooses the displayed field, `value` chooses the stored field, and `default` optionally supplies the initial stored value:
+
+````markdown
+```variables name="filters"
+run_id = {
+  "type": "select",
+  "options": "$.runs.body.items[*]",
+  "label": "name",
+  "value": "id",
+  "default": "run_123"
+}
+```
+````
+
+For data-bound selects, the field selectors support dotted paths such as `"metadata.name"`. A previously selected value that no longer appears in the bound results stays visible as a missing option instead of being silently discarded.
 
 Variable definitions start at the beginning of a line with `identifier =`, so multi-line JSON definitions continue until the next variable declaration or the end of the cell. Numbers and booleans are preserved as typed values in JavaScript cells and chart contexts; templates stringify them when rendering text.
 
@@ -170,6 +187,8 @@ The rendered variable cell shows a dropdown of configured secret names. The sele
 app/                Native Objective-C++ macOS shell and WKWebView bridge
 web/src/app.js      Workbook parsing, rendering, templating, and HTTP execution
 web/src/charts.js   Chart data extraction and Chart.js rendering
+web/src/selects.js  Static and data-bound select option resolution
+web/src/workbook-output.js Shared workbook output root for JSONPath consumers
 web/styles.css      Web UI styles loaded inside the native web view
 samples/welcome.md  Bundled starter workbook
 build.mjs           Reckon build graph for the app bundle

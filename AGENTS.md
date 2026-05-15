@@ -36,6 +36,8 @@ Data flow:
 - `web/src/rendering.js`: DOM rendering for workbook nodes, runtime sections, variable controls, and JSON highlighting.
 - `web/src/runtime-state.js`: Derived HTTP/JavaScript/JSON node state and snapshot helpers.
 - `web/src/charts.js`: Chart cell JSONPath extraction, validation, Chart.js rendering, and chart instance cleanup.
+- `web/src/selects.js`: Static and data-bound select option resolution.
+- `web/src/workbook-output.js`: Shared workbook output root for JSONPath consumers.
 - `web/src/execution.js`: HTTP autorun/manual execution, JavaScript cell execution, and propagation scheduling.
 - `web/src/templates.js`: Template context construction and expression resolution.
 - `web/src/variables.js`: Variable and secret-binding runtime mutations.

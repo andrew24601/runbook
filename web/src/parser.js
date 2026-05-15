@@ -235,23 +235,45 @@ function parseVariableControlDefinition(definition) {
     return null;
   }
 
-  if (String(definition.type || "").toLowerCase() !== "select" || !Array.isArray(definition.options)) {
+  if (String(definition.type || "").toLowerCase() !== "select") {
     return null;
   }
 
-  const options = definition.options.filter((option) => isSelectOptionValue(option));
-  const value = Object.prototype.hasOwnProperty.call(definition, "value") && isSelectOptionValue(definition.value)
-    ? definition.value
-    : options.length ? options[0] : "";
+  if (Array.isArray(definition.options)) {
+    const options = definition.options.filter((option) => isSelectOptionValue(option));
+    const value = Object.prototype.hasOwnProperty.call(definition, "default") && isSelectOptionValue(definition.default)
+      ? definition.default
+      : options.length ? options[0] : "";
 
-  return {
-    value,
-    valueType: "control",
-    control: {
-      type: "select",
-      options
-    }
-  };
+    return {
+      value,
+      valueType: "control",
+      control: {
+        type: "select",
+        options
+      }
+    };
+  }
+
+  if (typeof definition.options === "string" && definition.options.trim()) {
+    const labelPath = typeof definition.label === "string" ? definition.label.trim() : "";
+    const valuePath = typeof definition.value === "string" ? definition.value.trim() : "";
+    const defaultValue = Object.prototype.hasOwnProperty.call(definition, "default") && isSelectOptionValue(definition.default)
+      ? definition.default
+      : "";
+    return {
+      value: defaultValue,
+      valueType: "control",
+      control: {
+        type: "select",
+        optionsPath: definition.options.trim(),
+        ...(labelPath ? { labelPath } : {}),
+        ...(valuePath ? { valuePath } : {})
+      }
+    };
+  }
+
+  return null;
 }
 
 function isQuotedVariableValue(value) {

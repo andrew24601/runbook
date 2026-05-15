@@ -8,6 +8,7 @@ import {
   resolveJSONNodeText
 } from "./runtime-state.js";
 import { buildTemplateContext, resolveTemplateStringLenient } from "./templates.js";
+import { buildSelectOptionEntries } from "./selects.js";
 import { getHTTPExpansionKey, getSecretBinding, getVariableValue, setSecretBinding, setVariableValue } from "./variables.js";
 import { sanitizeClassName } from "./utils.js";
 
@@ -296,33 +297,55 @@ function renderSelectVariableInput(namespaceName, entry, state, nodeIndex, callb
   const select = document.createElement("select");
   select.className = "variable-input";
   identifyVariableControl(select, namespaceName, entry, "select");
-  const options = Array.isArray(entry.control.options) ? entry.control.options : [];
+  const optionState = buildSelectOptionEntries(entry, state.parsedDocument.nodes, state.runtimeState);
+  const options = optionState.entries;
   const currentValue = getVariableValue(state.runtimeState, namespaceName, entry.key, entry.value, entry);
-  let selectedIndex = options.findIndex((option) => Object.is(option, currentValue));
+  let selectedIndex = options.findIndex((option) => Object.is(option.value, currentValue));
   if (selectedIndex === -1) {
-    selectedIndex = options.findIndex((option) => String(option) === String(currentValue));
+    selectedIndex = options.findIndex((option) => String(option.value) === String(currentValue));
   }
 
   const optionValues = [...options];
   if (selectedIndex === -1 && currentValue !== "") {
     selectedIndex = optionValues.length;
-    optionValues.push(currentValue);
+    optionValues.push({
+      label: String(currentValue),
+      value: currentValue,
+      isMissing: true
+    });
+  }
+
+  if (!optionValues.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = optionState.error || (optionState.isDataBound ? "No options available" : "No options");
+    select.appendChild(option);
+    select.value = "";
+    select.disabled = true;
+    if (optionState.error) {
+      select.title = optionState.error;
+    }
+    return select;
   }
 
   optionValues.forEach((optionValue, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = String(optionValue);
-    if (index >= options.length) {
+    option.textContent = optionValue.label;
+    if (optionValue.isMissing) {
       option.textContent = `${option.textContent} (missing)`;
     }
     select.appendChild(option);
   });
 
+  if (optionState.error) {
+    select.title = optionState.error;
+  }
+  select.disabled = Boolean(optionState.error) || options.length === 0;
   select.value = selectedIndex === -1 ? "" : String(selectedIndex);
   select.addEventListener("change", () => {
     const index = Number.parseInt(select.value, 10);
-    const nextValue = index >= 0 && index < optionValues.length ? optionValues[index] : entry.value;
+    const nextValue = index >= 0 && index < optionValues.length ? optionValues[index].value : entry.value;
     commitVariableValue(state, namespaceName, entry, nextValue, nodeIndex, callbacks);
   });
   return select;

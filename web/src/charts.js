@@ -1,7 +1,7 @@
 import Chart from "chart.js/auto";
 import { JSONPath } from "jsonpath-plus";
 
-import { buildTemplateContext } from "./templates.js";
+import { buildWorkbookOutputRoot } from "./workbook-output.js";
 
 const SUPPORTED_CHART_TYPES = new Set(["line", "bar", "scatter"]);
 
@@ -152,29 +152,6 @@ export function destroyChartsInElement(root) {
   root.querySelectorAll("canvas").forEach((canvas) => {
     destroyChartForCanvas(canvas);
   });
-}
-
-function buildWorkbookOutputRoot(nodes, runtimeState) {
-  const context = buildTemplateContext(nodes || [], runtimeState || {});
-  const root = {};
-
-  Object.entries(context.variablesByNamespace || {}).forEach(([name, value]) => {
-    root[name] = value;
-  });
-
-  Object.entries(context.httpEntriesByCell || {}).forEach(([name, value]) => {
-    if (!Object.prototype.hasOwnProperty.call(root, name)) {
-      root[name] = value;
-    }
-  });
-
-  Object.entries(context.javascriptEntriesByCell || {}).forEach(([name, value]) => {
-    if (!Object.prototype.hasOwnProperty.call(root, name)) {
-      root[name] = value;
-    }
-  });
-
-  return root;
 }
 
 function resolveChartPath(path, root, axisName) {
