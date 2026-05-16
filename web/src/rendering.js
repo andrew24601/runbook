@@ -1,6 +1,7 @@
 
 import { marked } from "marked";
 import { buildChartNodeState, destroyChartsInElement, renderChartCell } from "./charts.js";
+import { buildListNodeState, renderListCell } from "./lists.js";
 import {
   buildHTTPNodeState,
   buildJavascriptNodeState,
@@ -123,6 +124,10 @@ export function renderNodeDetail(node, state, callbacks, precomputedHTTPState = 
 
   if (node.cellType === "chart") {
     return renderChartCell(node, buildChartNodeState(node, state));
+  }
+
+  if (node.cellType === "list") {
+    return renderListCell(node, buildListNodeState(node, state));
   }
 
   return renderCodeBlock(node.source || "");
@@ -410,7 +415,7 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
 
   documentNodes.forEach((node) => {
     try {
-      if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json" && node.cellType !== "javascript" && node.cellType !== "chart"))) {
+      if (node.kind !== "markdown" && (node.kind !== "cell" || (node.cellType !== "http" && node.cellType !== "json" && node.cellType !== "javascript" && node.cellType !== "chart" && node.cellType !== "list"))) {
         return;
       }
 
@@ -470,6 +475,11 @@ export function refreshTemplateDrivenNodes(appState, app, callbacks) {
       destroyChartsInElement(article);
       if (node.cellType === "chart") {
         article.replaceChildren(renderChartCell(node, buildChartNodeState(node, appState)));
+        return;
+      }
+
+      if (node.cellType === "list") {
+        article.replaceChildren(renderListCell(node, buildListNodeState(node, appState)));
         return;
       }
 

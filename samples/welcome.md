@@ -65,6 +65,15 @@ y = $.profileMetrics.items[*].value
 label = Profile metrics
 ```
 
+The same dynamic output can render as a compact list.
+
+```list
+view = table
+items = $.profileMetrics.items[*]
+field = Metric | label
+field = Value | value
+```
+
 Markdown can reflect the cached response.
 
 - Profile status: {{profile.status}}

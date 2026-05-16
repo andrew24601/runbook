@@ -32,7 +32,11 @@ GET {{env.base_url}}/todos?userId={{selection.user_id}}
 Accept: application/json
 ```
 
-```json src="todos.body"
+```list
+view = cards
+items = $.todos.body[*]
+title = title
+field = Completed | completed
 ```
 
 ```javascript name="todoSummary"

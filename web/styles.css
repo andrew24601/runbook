@@ -111,7 +111,8 @@ body {
 
 .http-cell,
 .javascript-cell,
-.chart-cell {
+.chart-cell,
+.list-cell {
   display: grid;
   gap: 10px;
 }
@@ -133,6 +134,107 @@ body {
   font-family: "Menlo", "SFMono-Regular", monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.list-error,
+.list-empty {
+  margin: 0;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.list-error {
+  border: 1px solid rgba(176, 61, 46, 0.20);
+  background: rgba(176, 61, 46, 0.08);
+  color: var(--failure);
+  font-family: "Menlo", "SFMono-Regular", monospace;
+}
+
+.list-empty {
+  border: 1px solid rgba(29, 37, 34, 0.10);
+  background: rgba(29, 37, 34, 0.04);
+  color: var(--muted);
+}
+
+.list-table-wrap {
+  overflow-x: auto;
+}
+
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.list-table th,
+.list-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.list-table th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.list-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.list-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.list-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.list-card-title,
+.list-card-subtitle {
+  margin: 0;
+}
+
+.list-card-title {
+  font-size: 16px;
+}
+
+.list-card-subtitle {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.list-card-details {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.list-card-details dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.list-card-details dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .render-error {
@@ -277,6 +379,7 @@ body {
 .document-node-json,
 .document-node-javascript,
 .document-node-chart,
+.document-node-list,
 .document-node-assert {
   border-radius: 8px;
   padding: 12px;

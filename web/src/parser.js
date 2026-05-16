@@ -65,7 +65,7 @@ export function parseFenceInfo(infoString) {
 }
 
 export function isWorkbookFenceLanguage(language) {
-  return language === "http" || language === "variables" || language === "assert" || language === "json" || language === "javascript" || language === "chart";
+  return language === "http" || language === "variables" || language === "assert" || language === "json" || language === "javascript" || language === "chart" || language === "list";
 }
 
 export function parseWorkbookCell(token, fence, nodeIndex) {
@@ -104,6 +104,13 @@ export function parseWorkbookCell(token, fence, nodeIndex) {
     return {
       ...baseNode,
       chart: parseChartSpec(source)
+    };
+  }
+
+  if (fence.language === "list") {
+    return {
+      ...baseNode,
+      list: parseListSpec(source)
     };
   }
 
@@ -313,6 +320,59 @@ function parseChartSpec(source) {
     x: String(spec.x || "").trim(),
     y: String(spec.y || "").trim(),
     label: String(spec.label || "").trim()
+  };
+}
+
+function parseListSpec(source) {
+  const spec = {
+    fields: []
+  };
+
+  String(source || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex === -1) {
+        return;
+      }
+
+      const key = line.slice(0, separatorIndex).trim().toLowerCase();
+      const value = normalizeVariableValue(line.slice(separatorIndex + 1).trim());
+      if (!key) {
+        return;
+      }
+
+      if (key === "field") {
+        spec.fields.push(parseListField(value));
+        return;
+      }
+
+      spec[key] = value;
+    });
+
+  return {
+    view: String(spec.view || "table").trim().toLowerCase() || "table",
+    items: String(spec.items || "").trim(),
+    title: String(spec.title || "").trim(),
+    subtitle: String(spec.subtitle || "").trim(),
+    fields: spec.fields
+  };
+}
+
+function parseListField(value) {
+  const separatorIndex = String(value || "").indexOf("|");
+  if (separatorIndex === -1) {
+    return {
+      label: String(value || "").trim(),
+      path: ""
+    };
+  }
+
+  return {
+    label: String(value || "").slice(0, separatorIndex).trim(),
+    path: String(value || "").slice(separatorIndex + 1).trim()
   };
 }
 

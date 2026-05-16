@@ -36,6 +36,8 @@ Data flow:
 - `web/src/rendering.js`: DOM rendering for workbook nodes, runtime sections, variable controls, and JSON highlighting.
 - `web/src/runtime-state.js`: Derived HTTP/JavaScript/JSON node state and snapshot helpers.
 - `web/src/charts.js`: Chart cell JSONPath extraction, validation, Chart.js rendering, and chart instance cleanup.
+- `web/src/field-paths.js`: Shared dotted field-path lookup for bound data renderers.
+- `web/src/lists.js`: List cell JSONPath extraction, validation, and table/card rendering.
 - `web/src/selects.js`: Static and data-bound select option resolution.
 - `web/src/workbook-output.js`: Shared workbook output root for JSONPath consumers.
 - `web/src/execution.js`: HTTP autorun/manual execution, JavaScript cell execution, and propagation scheduling.
@@ -44,6 +46,7 @@ Data flow:
 - `web/src/persistence.js`: Runtime cache payload construction and sanitization.
 - `web/src/utils.js`: Shared small pure helpers.
 - `web/scripts/validate-typed-variables.mjs`: Lightweight parser validation for typed variable cells.
+- `web/scripts/validate-list-cells.mjs`: Lightweight parser/state/render validation for list cells.
 - `web/styles.css`: Web app styling.
 - `package.json`: Root npm scripts; `npm run build` runs `build.mjs`.
 - `samples/welcome.md`: Bundled sample workbook.
@@ -65,8 +68,9 @@ From repository root:
 Use this sequence for routine maintenance:
 
 1. `npm run test:variables`
-2. `npm run build`
-3. Launch app (`open -n build/RunDown.app`) for UI/runtime sanity.
+2. `npm run test:lists`
+3. `npm run build`
+4. Launch app (`open -n build/RunDown.app`) for UI/runtime sanity.
 
 Notes:
 - Prefer the Reckon app build plus runtime sanity checks for feature work.

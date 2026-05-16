@@ -1,5 +1,6 @@
 import { JSONPath } from "jsonpath-plus";
 
+import { resolveDottedFieldPath } from "./field-paths.js";
 import { buildWorkbookOutputRoot } from "./workbook-output.js";
 
 export function buildSelectOptionEntries(entry, nodes, runtimeState) {
@@ -55,30 +56,16 @@ export function buildSelectOptionEntries(entry, nodes, runtimeState) {
 }
 
 function buildBoundSelectOptionEntry(match, control) {
-  const value = control.valuePath ? resolveFieldPath(match, control.valuePath) : match;
+  const value = control.valuePath ? resolveDottedFieldPath(match, control.valuePath) : match;
   if (!isSelectOptionValue(value)) {
     return null;
   }
 
-  const labelValue = control.labelPath ? resolveFieldPath(match, control.labelPath) : value;
+  const labelValue = control.labelPath ? resolveDottedFieldPath(match, control.labelPath) : value;
   return {
     label: labelValue == null ? "" : String(labelValue),
     value
   };
-}
-
-function resolveFieldPath(value, path) {
-  const segments = String(path || "").split(".").map((segment) => segment.trim()).filter(Boolean);
-  let current = value;
-
-  for (const segment of segments) {
-    if (current == null || typeof current !== "object" || !Object.prototype.hasOwnProperty.call(current, segment)) {
-      return undefined;
-    }
-    current = current[segment];
-  }
-
-  return current;
 }
 
 function isSelectOptionValue(value) {

@@ -14,6 +14,7 @@ The current app bundle and binary are still named `RunDown` in the build output.
 - Executes HTTP cells manually or automatically when marked with `auto="true"`.
 - Runs named JavaScript cells against upstream variables, HTTP responses, and prior script output.
 - Renders line, bar, and scatter charts from named workbook outputs with JSONPath selectors.
+- Renders dynamic workbook data as tables or cards with JSONPath-backed list cells.
 - Caches HTTP responses and runtime state outside the workbook file.
 - Lets rendered Markdown and JSON cells reflect cached response and JavaScript output data.
 
@@ -66,6 +67,13 @@ y = $.summary.metrics[*].value
 label = Profile metrics
 ```
 
+```list
+view = table
+items = $.summary.metrics[*]
+field = Metric | label
+field = Value | value
+```
+
 - Status: {{profile.status}}
 - Name: {{summary.name}}
 - City: {{summary.city}}
@@ -80,6 +88,7 @@ Supported workbook fences in the current shell:
 | `javascript` | Runs JavaScript with access to named outputs from earlier cells and caches the returned value. |
 | `json` | Renders cached JSON from another cell reference. |
 | `chart` | Renders a line, bar, or scatter chart from workbook output data selected with JSONPath. |
+| `list` | Renders dynamic workbook output as a table or cards selected with JSONPath. |
 | `assert` | Reserved for assertion cells. |
 
 Runtime output is not written back into the Markdown file.
@@ -169,6 +178,37 @@ label = Latency
 
 Supported chart types are `line`, `bar`, and `scatter`. Line and bar charts keep `x` values as labels; scatter charts require numeric `x` and `y` values.
 
+### List Cells
+
+List cells render dynamic workbook output selected with JSONPath. Like charts and data-bound selects, `$` is the workbook output context, so variables, HTTP cells, and successful JavaScript cells are available by name.
+
+Tables use repeated `field = Label | dotted.path` lines:
+
+````markdown
+```list
+view = table
+items = $.runs.body.items[*]
+field = Run ID | id
+field = Name | name
+field = Owner | metadata.owner.name
+```
+````
+
+Cards use an explicit `title`, optional `subtitle`, and the same repeated fields for detail rows:
+
+````markdown
+```list
+view = cards
+items = $.runs.body.items[*]
+title = name
+subtitle = status
+field = Run ID | id
+field = Owner | metadata.owner.name
+```
+````
+
+`view` defaults to `table` when omitted. Field, title, and subtitle paths are resolved relative to each matched item; dotted paths are supported, and missing individual values render blank. A valid path with no matches shows an empty state instead of an error.
+
 ### Secret Slots
 
 Global secrets are configured from the native app menu with **Secrets…**. Values are stored in macOS Keychain under user-chosen names such as `SECRET_ACCESS_KEY`; the app lists names but never displays stored values.
@@ -187,6 +227,8 @@ The rendered variable cell shows a dropdown of configured secret names. The sele
 app/                Native Objective-C++ macOS shell and WKWebView bridge
 web/src/app.js      Workbook parsing, rendering, templating, and HTTP execution
 web/src/charts.js   Chart data extraction and Chart.js rendering
+web/src/field-paths.js Shared dotted field-path lookup for bound data renderers
+web/src/lists.js    List cell JSONPath extraction, validation, and table/card rendering
 web/src/selects.js  Static and data-bound select option resolution
 web/src/workbook-output.js Shared workbook output root for JSONPath consumers
 web/styles.css      Web UI styles loaded inside the native web view
@@ -247,6 +289,8 @@ The native layer in `app/window*.mm` should stay focused on macOS responsibiliti
 For a routine validation pass:
 
 ```sh
+npm run test:variables
+npm run test:lists
 npm run build
 open -n build/RunDown.app
 ```
